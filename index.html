@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quest Academy — Learn · Battle · Adventure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #1c1a17;
+    background-image: radial-gradient(circle at 50% 0%, #2a2620 0%, #14120f 70%);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #e8e0d2;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; }
+  button:focus-visible { outline: 3px solid #c9a227; outline-offset: 2px; }
+  input:focus-visible { outline: 2px solid #c9a227; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + Babel from CDN: no build step, just open the file -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ─────────────────────────────────────────────────────────────
+// QUEST ACADEMY v4 — standalone · saved progress · any browser
+// ─────────────────────────────────────────────────────────────
+
+const rint = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+// ── SAVE SYSTEM (localStorage) ─────────────────────────────────
+const SAVE_KEY = "questAcademy.v4";
+function loadSave() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || null; }
+  catch { return null; }
+}
+function writeSave(data) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch {}
+}
+function blankProfile() {
+  return {
+    bestPoints: 0, bestLevel: 1, unlockedColors: ["gold","emerald","sapphire","crimson"],
+    lifetime: { Math:{seen:0,right:0}, ReadingVocab:{seen:0,right:0}, ReadingPassage:{seen:0,right:0}, Element:{seen:0,right:0}, bestStreak:0, monstersBeaten:0 },
+    inProgress: null, // a saved mid-run snapshot
+  };
+}
+
+// ── ELEMENTS ───────────────────────────────────────────────────
+const ELEMENTS = [
+  ["Hydrogen","H"],["Helium","He"],["Lithium","Li"],["Beryllium","Be"],["Boron","B"],
+  ["Carbon","C"],["Nitrogen","N"],["Oxygen","O"],["Fluorine","F"],["Neon","Ne"],
+  ["Sodium","Na"],["Magnesium","Mg"],["Aluminum","Al"],["Silicon","Si"],["Phosphorus","P"],
+  ["Sulfur","S"],["Chlorine","Cl"],["Argon","Ar"],["Potassium","K"],["Calcium","Ca"],
+  ["Titanium","Ti"],["Chromium","Cr"],["Iron","Fe"],["Cobalt","Co"],["Nickel","Ni"],
+  ["Copper","Cu"],["Zinc","Zn"],["Bromine","Br"],["Krypton","Kr"],["Silver","Ag"],
+  ["Tin","Sn"],["Iodine","I"],["Xenon","Xe"],["Barium","Ba"],["Platinum","Pt"],
+  ["Gold","Au"],["Mercury","Hg"],["Lead","Pb"],["Uranium","U"],["Tungsten","W"],
+];
+
+// ── READING POOL ───────────────────────────────────────────────
+const READING = [
+  ["Opposite of 'ancient'?",["modern","old","tired","huge"],"modern"],
+  ["Opposite of 'expand'?",["shrink","grow","stretch","widen"],"shrink"],
+  ["Opposite of 'arrive'?",["depart","reach","enter","stay"],"depart"],
+  ["Opposite of 'generous'?",["stingy","kind","giving","warm"],"stingy"],
+  ["Opposite of 'victory'?",["defeat","win","prize","trophy"],"defeat"],
+  ["Opposite of 'ascend'?",["descend","climb","rise","lift"],"descend"],
+  ["Opposite of 'fragile'?",["sturdy","thin","weak","brittle"],"sturdy"],
+  ["Opposite of 'rapid'?",["sluggish","quick","swift","fast"],"sluggish"],
+  ["Synonym for 'brave'?",["courageous","sleepy","small","quiet"],"courageous"],
+  ["Synonym for 'tiny'?",["minuscule","giant","loud","warm"],"minuscule"],
+  ["Synonym for 'happy'?",["joyful","angry","bored","scared"],"joyful"],
+  ["Synonym for 'fast'?",["rapid","slow","heavy","late"],"rapid"],
+  ["Synonym for 'smart'?",["clever","dull","plain","tired"],"clever"],
+  ["Synonym for 'huge'?",["enormous","tiny","narrow","short"],"enormous"],
+  ["Synonym for 'glad'?",["pleased","upset","weary","mean"],"pleased"],
+  ["Synonym for 'begin'?",["start","finish","stop","close"],"start"],
+  ["Synonym for 'quiet'?",["silent","loud","busy","bright"],"silent"],
+  ["'The dog wagged ___ tail.'",["its","it's","its'","thier"],"its"],
+  ["'___ going to rain today.'",["It's","Its","Its'","Itz"],"It's"],
+  ["Which word is an ADJECTIVE?",["sparkly","run","quickly","river"],"sparkly"],
+  ["Which word is a NOUN?",["mountain","jump","slowly","green"],"mountain"],
+  ["Which word is a VERB?",["gallop","happy","table","soft"],"gallop"],
+  ["Which word is an ADVERB?",["gently","gentle","gentleness","gent"],"gently"],
+  ["'She ran quickly.' The VERB is:",["ran","she","quickly","the"],"ran"],
+  ["'The red kite flew high.' ADJECTIVE is:",["red","kite","flew","high"],"red"],
+  ["Which is a PRONOUN?",["they","table","jump","blue"],"they"],
+  ["Plural of 'mouse'?",["mice","mouses","mouse","meese"],"mice"],
+  ["Plural of 'child'?",["children","childs","childes","childrens"],"children"],
+  ["Plural of 'tooth'?",["teeth","tooths","teeths","toothes"],"teeth"],
+  ["Plural of 'leaf'?",["leaves","leafs","leafes","leavs"],"leaves"],
+  ["Plural of 'foot'?",["feet","foots","feets","footes"],"feet"],
+  ["Plural of 'cactus'?",["cacti","cactuses","cactus","cactise"],"cacti"],
+  ["Past tense of 'swim'?",["swam","swimmed","swum","swimed"],"swam"],
+  ["Past tense of 'run'?",["ran","runned","run","ranned"],"ran"],
+  ["Past tense of 'bring'?",["brought","bringed","brang","broughten"],"brought"],
+  ["Past tense of 'catch'?",["caught","catched","cotch","caughted"],"caught"],
+  ["Past tense of 'fly'?",["flew","flied","flowed","flyed"],"flew"],
+  ["Past tense of 'teach'?",["taught","teached","taughted","teechd"],"taught"],
+  ["Correctly spelled word:",["beautiful","beutiful","beautifull","biutiful"],"beautiful"],
+  ["Correctly spelled word:",["necessary","neccessary","necesary","nessecary"],"necessary"],
+  ["Correctly spelled word:",["separate","seperate","separite","seperat"],"separate"],
+  ["Correctly spelled word:",["friend","freind","frend","fryend"],"friend"],
+  ["Correctly spelled word:",["because","becuase","becouse","becaus"],"because"],
+  ["Correctly spelled word:",["surprise","suprise","surprize","supprise"],"surprise"],
+  ["Correctly spelled word:",["tomorrow","tommorow","tomorow","tommorrow"],"tomorrow"],
+  ["Which is a complete SENTENCE?",["The cat slept.","Running fast.","Under the tree.","Big and red."],"The cat slept."],
+  ["Which sentence is a QUESTION?",["Where is my hat?","I lost my hat.","My hat is red.","Find the hat."],"Where is my hat?"],
+  ["Correct punctuation?",["I like apples, grapes, and pears.","I like apples grapes and pears.","I like, apples grapes pears.","I like apples; grapes pears."],"I like apples, grapes, and pears."],
+  ["A SYNONYM for 'tiny':",["minute","giant","loud","warm"],"minute"],
+  ["Rhymes with 'bright':",["night","blue","round","soft"],"night"],
+  ["Rhymes with 'cloud':",["proud","clods","cold","crow"],"proud"],
+  ["The PREFIX 're-' usually means:",["again","not","before","under"],"again"],
+  ["The SUFFIX '-ful' usually means:",["full of","without","before","tiny"],"full of"],
+  ["'Unhappy' means:",["not happy","very happy","happy again","too happy"],"not happy"],
+  ["A GROUP of wolves is a:",["pack","herd","school","flock"],"pack"],
+  ["A baby cat is a:",["kitten","cub","foal","calf"],"kitten"],
+  ["'Brittle' most nearly means:",["easily broken","very strong","very wet","quite warm"],"easily broken"],
+  ["Pick the COMPOUND word:",["sunflower","running","quickly","happy"],"sunflower"],
+  ["Contraction for 'do not':",["don't","dont'","do'nt","donot"],"don't"],
+];
+
+// ── PASSAGES ───────────────────────────────────────────────────
+const PASSAGES = [
+  { text:"Maya planted three seeds in the spring. By summer, two had grown into tall sunflowers, but the third never sprouted. She was proud of her garden anyway.",
+    q:"How many seeds grew into sunflowers?", options:["two","three","one","none"], answer:"two" },
+  { text:"The old lighthouse had not been lit in twenty years. One stormy night, a young sailor climbed its steps and lit the lamp, guiding a lost ship safely to shore.",
+    q:"What did the sailor do?", options:["lit the lamp","sailed away","built a ship","closed the lighthouse"], answer:"lit the lamp" },
+  { text:"Diego forgot his lunch at home. His friend Sam noticed and shared half of his sandwich. Diego smiled and promised to bring Sam a cookie the next day.",
+    q:"Why did Diego promise a cookie?", options:["to thank Sam","he was hungry","he lost a bet","it was a holiday"], answer:"to thank Sam" },
+  { text:"The desert fox sleeps in a cool burrow all day. When the sun sets and the sand cools, it comes out to hunt insects and small lizards under the stars.",
+    q:"When does the desert fox hunt?", options:["at night","at noon","in the morning","never"], answer:"at night" },
+  { text:"Aisha practiced the piano every day for a month. At the recital, her hands shook, but she played the whole song without a single mistake. The crowd clapped loudly.",
+    q:"How did the recital go?", options:["she played it perfectly","she forgot the song","she did not show up","she broke the piano"], answer:"she played it perfectly" },
+  { text:"A small turtle and a fast hare agreed to race. The hare ran ahead, then napped. The turtle kept walking slowly and crossed the finish line first.",
+    q:"Why did the turtle win?", options:["it never stopped","it was faster","the hare cheated","it took a shortcut"], answer:"it never stopped" },
+  { text:"The bakery smelled of warm bread every morning. Mr. Lee arrived at four o'clock to start the ovens so the loaves would be ready when customers came at seven.",
+    q:"Why did Mr. Lee arrive so early?", options:["to bake the bread in time","to clean the floor","to meet a friend","to lock the door"], answer:"to bake the bread in time" },
+  { text:"Rosa found a hurt bird in the yard. She kept it warm in a box and fed it until its wing healed. Two weeks later, she opened the box and watched it fly away.",
+    q:"What happened to the bird at the end?", options:["it flew away","it stayed in the box","it could not fly","it ran off"], answer:"it flew away" },
+];
+
+// ── GENERATORS ─────────────────────────────────────────────────
+function makeMath(level, force) {
+  const d = clamp(level, 1, 20);
+  const type = force || rint(1, 7);
+  let q, a;
+  if (type === 1) { const x=rint(d*2,d*9+15), y=rint(d,d*7+8); q=`${x} + ${y} = ?`; a=x+y; }
+  else if (type === 2) { const x=rint(d*3,d*9+25), y=rint(1,x); q=`${x} − ${y} = ?`; a=x-y; }
+  else if (type === 3) { const x=rint(2,Math.min(d+3,12)), y=rint(2,Math.min(d+2,12)); q=`${x} × ${y} = ?`; a=x*y; }
+  else if (type === 4) { const y=rint(2,Math.min(d+2,12)), b=rint(2,Math.min(d+3,12)); q=`${y*b} ÷ ${y} = ?`; a=b; }
+  else if (type === 5) { const each=rint(2,Math.min(d+2,9)), g=rint(2,Math.min(d+1,8)); q=`Each basket holds ${each} apples. How many in ${g} baskets?`; a=each*g; }
+  else if (type === 6) { const x=rint(d,d*9+20), y=rint(d,d*9+20); const big=Math.max(x,y);
+    const opts=[...new Set([String(x),String(y),String(Math.min(x,y)+1),String(big+2)])].slice(0,4);
+    return { kind:"Math", subtype:6, prompt:`Which is greater: ${x} or ${y}?`, options: shuffle(opts), answer:String(big) }; }
+  else { const denom=pick([2,3,4,5]); const whole=denom*rint(2,Math.min(d+2,9)); q=`What is 1/${denom} of ${whole}?`; a=whole/denom; }
+  const opts=new Set([a]); while(opts.size<4){ const c=a+rint(-8,8); if(c!==a&&c>=0)opts.add(c); }
+  return { kind:"Math", subtype:type, prompt:q, options: shuffle([...opts]).map(String), answer:String(a) };
+}
+function makeReading() { const [prompt,options,answer]=pick(READING); return { kind:"Reading", subtype:"vocab", prompt, options: shuffle(options), answer }; }
+function makePassage() { const p=pick(PASSAGES); return { kind:"Reading", subtype:"passage", passage:p.text, prompt:p.q, options: shuffle(p.options), answer:p.answer }; }
+function makeElement() { const [name,sym]=pick(ELEMENTS); const wrong=shuffle(ELEMENTS.filter(e=>e[1]!==sym)).slice(0,3).map(e=>e[1]); return { kind:"Element", subtype:"symbol", prompt:`BONUS! Chemical symbol for ${name}?`, options: shuffle([sym,...wrong]), answer: sym }; }
+function buildQuestion(level, idx, weak) {
+  if (idx === 4) return makeElement();
+  if (idx % 2 === 0) return makeMath(level, weak.mathForce);
+  const passChance = weak.readingPassageWeak ? 55 : 35;
+  return rint(1,100) <= passChance ? makePassage() : makeReading();
+}
+function battleQuestion(level) { return rint(0,1) ? makeMath(level) : makeReading(); }
+
+// ── PATHS ──────────────────────────────────────────────────────
+const DESTINATIONS = [
+  { name:"the Whispering Woods", blurb:"Tall pines hum a tune. Fireflies light a winding trail." },
+  { name:"the Sunken River", blurb:"Cool water rushes over smooth stones. A raft waits." },
+  { name:"the Crystal Caverns", blurb:"Walls glitter with violet gems and echo your footsteps." },
+  { name:"the Foggy Swamp", blurb:"Mist curls over lily pads. Something croaks nearby." },
+  { name:"the Dragon's Dungeon", blurb:"Torches flicker on damp stone. Chains rattle in the dark." },
+  { name:"the Windy Cliffs", blurb:"Eagles wheel above a dizzying drop. The wind sings." },
+  { name:"the Lost Library", blurb:"Endless shelves of dusty spellbooks reach the ceiling." },
+  { name:"the Frozen Pass", blurb:"Snow crunches underfoot. Icicles hang like glass swords." },
+  { name:"the Ember Volcano", blurb:"Heat shimmers off black rock. Lava glows far below." },
+  { name:"the Moonlit Meadow", blurb:"Silver grass sways. A unicorn watches from afar." },
+  { name:"the Sunken Shipwreck", blurb:"Barnacled timbers and a glint of buried treasure." },
+  { name:"the Clockwork City", blurb:"Brass gears turn overhead. Steam hisses from pipes." },
+  { name:"the Mushroom Hollow", blurb:"Giant glowing mushrooms tower like umbrellas." },
+  { name:"the Thunder Plains", blurb:"Storm clouds boom. Lightning paints the sky purple." },
+  { name:"the Starlight Tower", blurb:"A spiral staircase climbs toward the constellations." },
+  { name:"the Goblin Market", blurb:"Stalls sell odd trinkets. A merchant waves you over." },
+];
+
+// ── MONSTERS ───────────────────────────────────────────────────
+const MONSTERS = [
+  { name:"Slime Sprout",   art:"(• ◡ •)", hp:30,  color:"#5b8c6a" },
+  { name:"Cave Bat",       art:"^ᴥ^",     hp:35,  color:"#6a5b8c" },
+  { name:"Mud Crawler",    art:"≈o≈",     hp:40,  color:"#8c7a5b" },
+  { name:"Spark Imp",      art:"⚡‹•›⚡",  hp:45,  color:"#c9a227" },
+  { name:"Stone Troll",    art:"[ -_- ]", hp:55,  color:"#9a8c7a" },
+  { name:"Frost Wisp",     art:"❄(°o°)",  hp:55,  color:"#7fb0c9" },
+  { name:"Bog Lurker",     art:"~(⊙﹏⊙)~",hp:60,  color:"#5b7a5b" },
+  { name:"Sand Scorpion",  art:"›••‹⌐",   hp:65,  color:"#c98a3a" },
+  { name:"Shadow Hound",   art:"ᕕ(ᐛ)ᕗ",  hp:70,  color:"#555066" },
+  { name:"Gear Golem",     art:"[¤=¤]",   hp:80,  color:"#8a8f99" },
+  { name:"Storm Harpy",    art:"\\^v^/",  hp:80,  color:"#8a6ac9" },
+  { name:"Lava Newt",      art:"<≈≈>",    hp:85,  color:"#b5683a" },
+  { name:"Ghost Knight",   art:"†(°□°)†", hp:90,  color:"#9fb0c4" },
+  { name:"Crystal Spider", art:"/\\◇/\\", hp:95,  color:"#a07ec9" },
+  { name:"Thunder Roc",    art:"⟨~Ω~⟩",   hp:105, color:"#c9b04a" },
+  { name:"Bone Dragon",    art:"≈≈D=",    hp:115, color:"#d8d2c2" },
+  { name:"Void Wraith",    art:"((●))",   hp:120, color:"#5a4f72" },
+  { name:"Magma Titan",    art:"[▮▮▮]",   hp:130, color:"#c24a2a" },
+  { name:"Star Serpent",   art:"~*~*~",   hp:140, color:"#4a78c9" },
+  { name:"CHAOS LORD",     art:"☠‹×›☠",   hp:220, color:"#a62a4a", boss:true },
+];
+
+// ── CLASSES / COLORS ───────────────────────────────────────────
+const CLASSES = [
+  { id:"knight",  name:"Knight",  art:[" \\o/ "," |+| "," /^\\ "], dmg:18, blurb:"Hits hard with a sword.", ability:"Mighty Blow: special does 3× damage." },
+  { id:"mage",    name:"Mage",    art:[" *o* "," /Ψ\\ "," / \\ "], dmg:16, blurb:"Casts powerful spells.", ability:"Fireball: special hits + burns for 8 more." },
+  { id:"ranger",  name:"Ranger",  art:[" ‹o› "," }|{ "," / \\ "], dmg:15, blurb:"Fast arrows, never misses.", ability:"Double Shot: special attacks twice." },
+  { id:"guardian",name:"Guardian",art:[" [o] "," {#} "," /^\\ "], dmg:14, blurb:"Built like a fortress.", ability:"Bulwark: special damages + grants a shield." },
+];
+const COLORS = [
+  { id:"gold", hex:"#c9a227" }, { id:"emerald", hex:"#5b8c6a" },
+  { id:"sapphire", hex:"#4a7ba6" }, { id:"crimson", hex:"#b5683a" },
+  { id:"violet", hex:"#8a6ac9", unlockPts:300 }, { id:"silver", hex:"#aab0bb", unlockPts:600 },
+  { id:"rainbow", hex:"#e0a55b", unlockPts:1000 },
+];
+const TITLES=["Apprentice","Adventurer","Knight","Champion","Legend"];
+const titleFor=(l)=> l>=20?TITLES[4]:l>=15?TITLES[3]:l>=10?TITLES[2]:l>=5?TITLES[1]:TITLES[0];
+
+// ── styles ─────────────────────────────────────────────────────
+const S = {
+  shell:{ minHeight:"100vh", padding:"20px 14px 60px" },
+  card:{ maxWidth:580, margin:"0 auto", background:"#26221c", border:"1px solid #3a342b", borderRadius:16, padding:22, boxShadow:"0 18px 50px rgba(0,0,0,.5)" },
+  badge:{ display:"inline-block", fontFamily:"'JetBrains Mono',monospace", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", color:"#c9a227", border:"1px solid #5c4f2e", padding:"4px 10px", borderRadius:99, marginBottom:14 },
+  hat:{ fontFamily:"Georgia,serif", fontSize:27, margin:"0 0 6px", color:"#f3ead6" },
+  art:(c)=>({ fontFamily:"'JetBrains Mono',monospace", whiteSpace:"pre", fontSize:17, lineHeight:1.15, textAlign:"center", padding:"10px 0", fontWeight:700, color:c }),
+  bar:{ height:10, borderRadius:99, background:"#15130f", overflow:"hidden", border:"1px solid #3a342b" },
+  fill:(p,c)=>({ height:"100%", width:`${clamp(p,0,100)}%`, background:c, transition:"width .4s ease" }),
+  q:{ fontSize:19, lineHeight:1.4, margin:"10px 0 16px", fontWeight:600 },
+  passage:{ background:"#1d1a15", borderLeft:"3px solid #5c4f2e", borderRadius:8, padding:"12px 14px", fontSize:15, lineHeight:1.55, color:"#d6cbb6", margin:"6px 0 14px", fontStyle:"italic" },
+  opt:(st)=>({ display:"block", width:"100%", textAlign:"left", padding:"13px 16px", margin:"8px 0", borderRadius:12, fontSize:17, cursor:"pointer", border:"1px solid", transition:"all .15s", background: st==="right"?"#284a2e":st==="wrong"?"#4a2828":"#2f2a22", borderColor: st==="right"?"#5b8c6a":st==="wrong"?"#a6564a":"#473f33", color:"#e8e0d2" }),
+  choice:{ display:"block", width:"100%", padding:"16px", margin:"10px 0", borderRadius:12, fontSize:17, cursor:"pointer", border:"1px solid #473f33", background:"#2f2a22", color:"#e8e0d2", textAlign:"left" },
+  cta:(bg="#c9a227")=>({ display:"block", width:"100%", padding:"15px", marginTop:10, borderRadius:12, fontSize:18, fontWeight:700, cursor:"pointer", border:"none", background:bg, color:"#1c1a17" }),
+  ghost:{ display:"block", width:"100%", padding:"13px", marginTop:8, borderRadius:12, fontSize:15, cursor:"pointer", border:"1px solid #473f33", background:"transparent", color:"#c4b8a4" },
+  row:{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 },
+  stat:{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:"#a89a82" },
+  grid:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 },
+  swatch:(hex,sel,locked)=>({ position:"relative", height:42, borderRadius:10, background: locked?"#2a2620":hex, cursor: locked?"not-allowed":"pointer", border: sel?"3px solid #f3ead6":"3px solid transparent", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#8a7f6c" }),
+  feedback:(ok)=>({ padding:"11px 14px", borderRadius:10, margin:"6px 0 2px", fontSize:15, background: ok?"#1f3322":"#33201f", color: ok?"#9bd0a6":"#e0a59c" }),
+};
+
+function QuestMap({ trail, level }) {
+  return (
+    <div style={{ background:"#1d1a15", borderRadius:10, padding:"12px 10px", margin:"8px 0 4px" }}>
+      <div style={{ ...S.stat, marginBottom:8 }}>Your journey · Level {level} of 20</div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6, alignItems:"center" }}>
+        {Array.from({ length:20 }).map((_,i)=>{
+          const n=i+1, done=n<level, here=n===level, seg=trail[i];
+          return (
+            <div key={n} style={{ display:"flex", alignItems:"center", gap:4 }}>
+              <div title={seg?seg.dest:""} style={{ width:here?22:16, height:here?22:16, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", background: here?"#c9a227": done?"#5b8c6a":"#3a342b", color: here?"#1c1a17":"#15130f", fontSize:10, fontWeight:700, border: here?"2px solid #f3ead6":"none" }}>{here?"★":done?"✓":n}</div>
+              {n<20 && <span style={{ color:"#473f33", fontSize:11 }}>{seg ? (seg.dir==="L"?"◄":seg.dir==="R"?"►":"·") : "·"}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [save,setSave]=useState(()=> loadSave() || blankProfile());
+  const [screen,setScreen]=useState("start");
+  const [name,setName]=useState(save.lastName||"");
+  const [cls,setCls]=useState(CLASSES[0]);
+  const [color,setColor]=useState(COLORS[0]);
+
+  const [level,setLevel]=useState(1);
+  const [qIdx,setQIdx]=useState(0);
+  const [points,setPoints]=useState(0);
+  const [streak,setStreak]=useState(0);
+  const [hp,setHp]=useState(100);
+  const [powerUps,setPowerUps]=useState(0);
+  const [shield,setShield]=useState(0);
+  const [special,setSpecial]=useState(0);
+  const [trail,setTrail]=useState([]);
+
+  const [stats,setStats]=useState({Math:{seen:0,right:0},ReadingVocab:{seen:0,right:0},ReadingPassage:{seen:0,right:0},Element:{seen:0,right:0},bestStreak:0,monstersBeaten:0,mathTypes:{}});
+
+  const [question,setQuestion]=useState(null);
+  const [picked,setPicked]=useState(null);
+  const [forkOpts,setForkOpts]=useState(null);
+
+  const [monster,setMonster]=useState(null);
+  const [mhp,setMhp]=useState(0);
+  const [logLines,setLogLines]=useState([]);
+  const [mode,setMode]=useState(null);
+  const [battleQ,setBattleQ]=useState(null);
+  const [battlePicked,setBattlePicked]=useState(null);
+
+  function unlockedColorIds(profile){
+    const base=["gold","emerald","sapphire","crimson"];
+    COLORS.forEach(c=>{ if(c.unlockPts && profile.bestPoints>=c.unlockPts) base.push(c.id); });
+    return base;
+  }
+
+  function weakProfile(){
+    let mathForce=null, worst=0;
+    for(const [t,v] of Object.entries(stats.mathTypes)){
+      if(v.seen>=2){ const rate=v.wrong/v.seen; if(rate>worst&&rate>=0.5){ worst=rate; mathForce=Number(t); } }
+    }
+    const pv=stats.ReadingPassage;
+    const readingPassageWeak = pv.seen>=2 && (pv.right/pv.seen)<0.6;
+    return { mathForce: mathForce && rint(1,100)<=40 ? mathForce : null, readingPassageWeak };
+  }
+
+  useEffect(()=>{ if(screen==="play" && !question) setQuestion(buildQuestion(level,qIdx,weakProfile())); },[screen,level,qIdx]);
+
+  // persist mid-run snapshot whenever key state changes during a run
+  useEffect(()=>{
+    if(["play","fork","levelup","battle"].includes(screen)){
+      const snap={ name, clsId:cls.id, colorId:color.id, level, qIdx, points, hp, powerUps, shield, special, trail, stats };
+      const next={...save, inProgress:snap, lastName:name};
+      setSave(next); writeSave(next);
+    }
+  },[level,qIdx,points,hp,screen]);
+
+  function commitLifetime(finalPoints, finalLevel){
+    const lt={...save.lifetime};
+    ["Math","ReadingVocab","ReadingPassage","Element"].forEach(k=>{
+      lt[k]={ seen:lt[k].seen+stats[k].seen, right:lt[k].right+stats[k].right };
+    });
+    lt.bestStreak=Math.max(lt.bestStreak,stats.bestStreak);
+    lt.monstersBeaten=lt.monstersBeaten+stats.monstersBeaten;
+    const bestPoints=Math.max(save.bestPoints, finalPoints);
+    const next={ ...save, lifetime:lt, bestPoints, bestLevel:Math.max(save.bestLevel,finalLevel), unlockedColors:unlockedColorIds({...save,bestPoints}), inProgress:null, lastName:name };
+    setSave(next); writeSave(next);
+  }
+
+  function statKey(qn){ if(qn.kind==="Math")return "Math"; if(qn.kind==="Element")return "Element"; return qn.subtype==="passage"?"ReadingPassage":"ReadingVocab"; }
+  function recordAnswer(qn,correct){
+    setStats(prev=>{
+      const k=statKey(qn);
+      const next={...prev,[k]:{seen:prev[k].seen+1,right:prev[k].right+(correct?1:0)}};
+      if(qn.kind==="Math"&&qn.subtype){ const mt={...prev.mathTypes}; const cur=mt[qn.subtype]||{seen:0,wrong:0}; mt[qn.subtype]={seen:cur.seen+1,wrong:cur.wrong+(correct?0:1)}; next.mathTypes=mt; }
+      return next;
+    });
+  }
+
+  function goCustomize(){ setName(n=>n.trim()||"Hero"); setScreen("customize"); }
+  function freshRun(){
+    setLevel(1); setQIdx(0); setPoints(0); setStreak(0); setHp(100); setPowerUps(0); setShield(0); setSpecial(0); setTrail([]);
+    setStats({Math:{seen:0,right:0},ReadingVocab:{seen:0,right:0},ReadingPassage:{seen:0,right:0},Element:{seen:0,right:0},bestStreak:0,monstersBeaten:0,mathTypes:{}});
+    setQuestion(null); setScreen("play");
+  }
+  function resumeRun(){
+    const s=save.inProgress; if(!s) return;
+    setName(s.name); setCls(CLASSES.find(c=>c.id===s.clsId)||CLASSES[0]); setColor(COLORS.find(c=>c.id===s.colorId)||COLORS[0]);
+    setLevel(s.level); setQIdx(s.qIdx); setPoints(s.points); setHp(s.hp); setPowerUps(s.powerUps); setShield(s.shield); setSpecial(s.special);
+    setTrail(s.trail||[]); setStats(s.stats); setStreak(0); setQuestion(null); setScreen("play");
+  }
+  function eraseSave(){ const fresh=blankProfile(); fresh.lastName=name; setSave(fresh); writeSave(fresh); }
+
+  function answer(opt){
+    if(picked) return; setPicked(opt);
+    const correct=opt===question.answer; recordAnswer(question,correct);
+    const base=question.kind==="Element"?50:question.subtype==="passage"?30:20;
+    if(correct){ const ns=streak+1; setStreak(ns); setStats(p=>({...p,bestStreak:Math.max(p.bestStreak,ns)})); setPoints(p=>p+base+(streak>=2?10:0)); if(ns%4===0) setSpecial(s=>s+1); }
+    else setStreak(0);
+  }
+  function next(){
+    setPicked(null); setQuestion(null);
+    if(qIdx<4){ setQIdx(i=>i+1); return; }
+    setForkOpts(shuffle(DESTINATIONS).slice(0,2)); setScreen("fork");
+  }
+  function choosePath(dest,dir){
+    setTrail(t=>{ const n=[...t]; n[level-1]={dir,dest:dest.name}; return n; });
+    if(level===20){ startBattle(dest,true); return; }
+    if(rint(1,100)<=55) startBattle(dest,false); else advanceLevel();
+  }
+  function advanceLevel(){ if(level>=20){ winRun(); return; } setQIdx(0); setQuestion(null); setLevel(l=>l+1); setScreen("levelup"); }
+
+  function startBattle(dest,forceBoss){
+    let m; if(forceBoss||level===20){ m=MONSTERS[19]; } else { m=rint(1,100)<=40?pick(MONSTERS.slice(0,19)):MONSTERS[clamp(level-1,0,18)]; }
+    setMonster(m); setMhp(m.hp); setLogLines([`${m.boss?"⚠ BOSS! ":""}A ${m.name} appears in ${dest.name}!`]);
+    setMode(null); setBattleQ(null); setBattlePicked(null); setScreen("battle");
+  }
+  function chooseAction(m){ setMode(m); setBattleQ(battleQuestion(level)); setBattlePicked(null); }
+  function answerBattle(opt){
+    if(battlePicked) return; setBattlePicked(opt);
+    const correct=opt===battleQ.answer; recordAnswer(battleQ,correct);
+    const lines=[];
+    if(mode==="attack"||mode==="special"){
+      if(correct){
+        let dmg=cls.dmg+rint(0,6);
+        if(mode==="special"){
+          if(cls.id==="knight"){ dmg*=3; lines.push("⚔ MIGHTY BLOW — triple damage!"); }
+          else if(cls.id==="mage"){ dmg+=8; lines.push("🔥 FIREBALL — extra burn!"); }
+          else if(cls.id==="ranger"){ dmg*=2; lines.push("🏹 DOUBLE SHOT — two arrows!"); }
+          else { setShield(s=>s+1); lines.push("🛡 BULWARK — damage + a shield!"); }
+          setSpecial(s=>s-1);
+        } else if(powerUps>0){ dmg*=2; setPowerUps(p=>p-1); lines.push("⚡ Power-up — double damage!"); }
+        const nm=Math.max(0,mhp-dmg); setMhp(nm); lines.push(`You hit ${monster.name} for ${dmg}!`);
+        if(nm<=0){ const pts=monster.boss?100:30; lines.push(`${monster.name} defeated! +${pts} pts.`); setPoints(p=>p+pts); setStats(s=>({...s,monstersBeaten:s.monstersBeaten+1})); }
+      } else { lines.push("Miss — wrong answer!"); monsterTurn(lines); }
+    } else if(mode==="heal"){ if(correct){ const h=rint(15,25); setHp(v=>Math.min(100,v+h)); lines.push(`You recover ${h} HP!`); } else lines.push("Healing fizzles — wrong answer."); monsterTurn(lines); }
+    else if(mode==="charge"){ if(correct){ setPowerUps(p=>p+1); lines.push("Power-up charged!"); } else lines.push("The spell sputters — wrong answer."); monsterTurn(lines); }
+    setLogLines(l=>[...lines,...l].slice(0,6));
+  }
+  function monsterTurn(lines){ let dmg=rint(6,8+level); if(monster.boss)dmg+=6; if(shield>0){ dmg=Math.floor(dmg/2); setShield(s=>s-1); lines.push("Shield softens the blow!"); } const nh=Math.max(0,hp-dmg); setHp(nh); lines.push(`${monster.name} hits you for ${dmg}.`); if(nh<=0) lines.push("You have fallen..."); }
+  function afterBattle(){ setMode(null); setBattleQ(null); setBattlePicked(null); if(hp<=0){ loseRun(); return; } if(mhp<=0){ if(level>=20){ winRun(); } else advanceLevel(); } }
+  function buyShield(){ if(points>=40){ setPoints(p=>p-40); setShield(s=>s+1); setLogLines(l=>["You buy a shield (+1).",...l].slice(0,6)); } }
+  function buyPower(){ if(points>=60){ setPoints(p=>p-60); setPowerUps(p=>p+1); setLogLines(l=>["You buy a power-up (+1).",...l].slice(0,6)); } }
+
+  function winRun(){ commitLifetime(points,20); setScreen("win"); }
+  function loseRun(){ commitLifetime(points,level); setScreen("over"); }
+
+  const heroArt=cls.art.join("\n");
+  const unlocked=save.unlockedColors||["gold","emerald","sapphire","crimson"];
+
+  function StatBar({label,o}){ const pct=o.seen?Math.round(o.right/o.seen*100):0; return (
+    <div style={{margin:"8px 0"}}>
+      <div style={{...S.row,marginBottom:4}}><span style={{fontSize:14}}>{label}</span><span style={S.stat}>{o.right}/{o.seen} · {pct}%</span></div>
+      <div style={S.bar}><div style={S.fill(pct, pct>=70?"#5b8c6a":pct>=40?"#c9a227":"#a6564a")} /></div>
+    </div>); }
+
+  // ── START ──
+  if(screen==="start"){
+    const ip=save.inProgress;
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Quest Academy · v4</span>
+      <h1 style={S.hat}>Learn. Customize. Battle. Adventure.</h1>
+      <p style={{color:"#c4b8a4",lineHeight:1.6,marginTop:0}}>Answer math &amp; reading questions to power up your hero, follow your quest map, battle 20 monsters and a final boss, and unlock new colors. Your progress saves automatically on this computer.</p>
+      <div style={S.art(COLORS[0].hex)}>{CLASSES[0].art.join("\n")}</div>
+      {ip && <button style={S.cta("#5b8c6a")} onClick={resumeRun}>▶ Resume — {ip.name}, Level {ip.level}</button>}
+      <label style={{...S.stat,display:"block",margin:"14px 0 6px"}}>Name your hero</label>
+      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Type a name…" maxLength={14}
+        style={{width:"100%",padding:"14px 16px",borderRadius:12,fontSize:17,background:"#2f2a22",border:"1px solid #473f33",color:"#e8e0d2",fontFamily:"inherit"}}
+        onKeyDown={e=>e.key==="Enter"&&goCustomize()} />
+      <button style={S.cta()} onClick={goCustomize}>{ip?"Start a new quest →":"Build your hero →"}</button>
+      {(save.bestPoints>0) && <button style={S.ghost} onClick={()=>setScreen("stats")}>📊 View lifetime stats</button>}
+    </div></div>;
+  }
+
+  // ── CUSTOMIZE ──
+  if(screen==="customize"){
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Build your hero</span>
+      <h1 style={S.hat}>Choose a class</h1>
+      <div style={S.art(color.hex)}>{heroArt}</div>
+      <div style={S.grid}>
+        {CLASSES.map(c=>(
+          <button key={c.id} onClick={()=>setCls(c)} style={{...S.choice,margin:0,borderColor:cls.id===c.id?color.hex:"#473f33",borderWidth:cls.id===c.id?2:1}}>
+            <div style={{fontWeight:700}}>{c.name}</div><div style={S.stat}>{c.blurb}</div>
+            <div style={{...S.stat,color:"#c9a227",marginTop:4}}>★ {c.ability}</div>
+          </button>
+        ))}
+      </div>
+      <h2 style={{...S.hat,fontSize:20,marginTop:20}}>Pick a color</h2>
+      <p style={S.stat}>Locked colors unlock as your best score grows. Best so far: {save.bestPoints} pts.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+        {COLORS.map(c=>{ const locked=!unlocked.includes(c.id);
+          return <div key={c.id} style={S.swatch(c.hex, color.id===c.id, locked)} onClick={()=>!locked&&setColor(c)}>{locked?`★${c.unlockPts}`:""}</div>; })}
+      </div>
+      <button style={S.cta(color.hex)} onClick={freshRun}>Begin the quest →</button>
+      <button style={S.ghost} onClick={()=>setScreen("start")}>← Back</button>
+    </div></div>;
+  }
+
+  // ── LEVEL-UP ──
+  if(screen==="levelup"){
+    const newTitle=titleFor(level)!==titleFor(level-1);
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Onward!</span>
+      <h1 style={S.hat}>Level {level}</h1>
+      <div style={{...S.art(color.hex),fontSize:22}}>{heroArt}</div>
+      {newTitle && <p style={{textAlign:"center",color:"#c9a227",fontWeight:700}}>New rank: {name} the {titleFor(level)}!</p>}
+      <QuestMap trail={trail} level={level} />
+      <div style={{...S.row,marginTop:6}}><span style={S.stat}>★ {points} · ❤ {hp}</span><span style={S.stat}>⚡{powerUps} · 🛡{shield} · ✦{special}</span></div>
+      <button style={S.cta()} onClick={()=>{ setQuestion(null); setScreen("play"); }}>Continue →</button>
+      <button style={S.ghost} onClick={()=>setScreen("stats")}>📊 View my stats</button>
+    </div></div>;
+  }
+
+  // ── STATS ──
+  if(screen==="stats"){
+    const inRun=["Math","ReadingVocab","ReadingPassage","Element"].some(k=>stats[k].seen>0);
+    const src=inRun?stats:save.lifetime;
+    const tot=["Math","ReadingVocab","ReadingPassage","Element"].reduce((a,k)=>({seen:a.seen+src[k].seen,right:a.right+src[k].right}),{seen:0,right:0});
+    const overall=tot.seen?Math.round(tot.right/tot.seen*100):0;
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>{inRun?"This run":"Lifetime report"}</span>
+      <h1 style={S.hat}>{name||"Hero"}'s progress</h1>
+      <div style={{...S.row,marginBottom:10}}><span style={S.stat}>Overall accuracy</span><span style={{fontSize:22,fontWeight:700,color:"#c9a227"}}>{overall}%</span></div>
+      <StatBar label="Math" o={src.Math} />
+      <StatBar label="Reading — vocabulary & grammar" o={src.ReadingVocab} />
+      <StatBar label="Reading — comprehension" o={src.ReadingPassage} />
+      <StatBar label="Periodic table (bonus)" o={src.Element} />
+      <div style={{...S.row,marginTop:14,paddingTop:12,borderTop:"1px solid #3a342b"}}>
+        <span style={S.stat}>🔥 Best streak: {src.bestStreak}</span><span style={S.stat}>⚔ Monsters beaten: {src.monstersBeaten}</span>
+      </div>
+      {!inRun && <div style={{...S.row,marginTop:8}}><span style={S.stat}>🏆 Best score: {save.bestPoints}</span><span style={S.stat}>📈 Furthest: Level {save.bestLevel}</span></div>}
+      <button style={S.cta()} onClick={()=>setScreen(inRun?(monster&&mhp<=0?"levelup":"play"):"start")}>← Back</button>
+    </div></div>;
+  }
+
+  // ── FORK ──
+  if(screen==="fork" && forkOpts){
+    const [L,R]=forkOpts;
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Level {level} cleared</span>
+      <h1 style={S.hat}>A fork in the road</h1>
+      <QuestMap trail={trail} level={level} />
+      <p style={{color:"#c4b8a4",lineHeight:1.6}}>{name} the {titleFor(level)} reaches a split. Monsters may lurk on either path.</p>
+      <button style={S.choice} onClick={()=>choosePath(L,"L")}><div style={{fontWeight:700}}>◄ LEFT — {L.name}</div><div style={S.stat}>{L.blurb}</div></button>
+      <button style={S.choice} onClick={()=>choosePath(R,"R")}><div style={{fontWeight:700}}>RIGHT — {R.name} ►</div><div style={S.stat}>{R.blurb}</div></button>
+      <div style={{...S.row,marginTop:8}}><span style={S.stat}>★ {points} · ❤{hp}</span><span style={S.stat}>⚡{powerUps} · 🛡{shield} · ✦{special}</span></div>
+    </div></div>;
+  }
+
+  // ── BATTLE ──
+  if(screen==="battle" && monster){
+    const finished=mhp<=0||hp<=0;
+    return <div style={S.shell}><div style={S.card}>
+      <span style={{...S.badge, color:monster.boss?"#a62a4a":"#c9a227", borderColor:monster.boss?"#a62a4a":"#5c4f2e"}}>{monster.boss?"⚠ BOSS BATTLE":`Battle · Level ${level}`}</span>
+      <div style={S.row}>
+        <div><div style={{fontWeight:700,fontSize:18}}>{monster.name}</div>
+          <div style={{...S.bar,width:180,marginTop:6}}><div style={S.fill(mhp/monster.hp*100,monster.color)} /></div>
+          <div style={S.stat}>{mhp} / {monster.hp} HP</div></div>
+        <div style={S.art(monster.color)}>{monster.art}</div>
+      </div>
+      <div style={{...S.row,marginTop:14,paddingTop:14,borderTop:"1px solid #3a342b"}}>
+        <div style={S.art(color.hex)}>{heroArt}</div>
+        <div style={{flex:1}}><div style={{fontWeight:700}}>{name}</div>
+          <div style={{...S.bar,marginTop:6}}><div style={S.fill(hp,"#a6564a")} /></div>
+          <div style={S.stat}>❤{hp} · ⚡{powerUps} · 🛡{shield} · ✦{special} · ★{points}</div></div>
+      </div>
+      <div style={{background:"#1d1a15",borderRadius:10,padding:"10px 12px",margin:"14px 0",minHeight:64}}>
+        {logLines.map((l,i)=>(<div key={i} style={{...S.stat,color:i===0?"#e8e0d2":"#8a7f6c",margin:"2px 0"}}>{l}</div>))}
+      </div>
+      {!battleQ && !finished && (<>
+        <button style={S.cta("#a6564a")} onClick={()=>chooseAction("attack")}>⚔ Attack {powerUps>0?"(⚡)":""}</button>
+        {special>0 && <button style={S.cta("#c9a227")} onClick={()=>chooseAction("special")}>✦ {cls.ability.split(":")[0]} (special!)</button>}
+        <div style={S.grid}><button style={{...S.choice,margin:0}} onClick={()=>chooseAction("heal")}>✚ Heal</button><button style={{...S.choice,margin:0}} onClick={()=>chooseAction("charge")}>⚡ Charge</button></div>
+        <div style={S.grid}><button style={S.ghost} onClick={buyShield} disabled={points<40}>🛡 Shield — 40</button><button style={S.ghost} onClick={buyPower} disabled={points<60}>⚡ Power-up — 60</button></div>
+      </>)}
+      {battleQ && !finished && (<>
+        <div style={S.q}><span style={{...S.badge,marginBottom:0,marginRight:8}}>{battleQ.kind}</span><br/>{battleQ.prompt}</div>
+        {battleQ.options.map(opt=>{ let st="idle"; if(battlePicked){ if(opt===battleQ.answer)st="right"; else if(opt===battlePicked)st="wrong"; }
+          return <button key={opt} style={S.opt(st)} disabled={!!battlePicked} onClick={()=>answerBattle(opt)}>{opt}</button>; })}
+        {battlePicked && <button style={S.cta()} onClick={afterBattle}>Continue →</button>}
+      </>)}
+      {finished && <button style={S.cta()} onClick={afterBattle}>{mhp<=0?"Victory! Continue →":"Continue →"}</button>}
+    </div></div>;
+  }
+
+  // ── OVER ──
+  if(screen==="over"){
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Defeated</span>
+      <h1 style={S.hat}>{name} has fallen…</h1>
+      <p style={{color:"#c4b8a4",lineHeight:1.6}}>You reached <strong style={{color:"#f3ead6"}}>Level {level}</strong> with {points} points. Heroes always rise again!</p>
+      <button style={S.cta()} onClick={()=>setScreen("customize")}>Try again ↺</button>
+      <button style={S.ghost} onClick={()=>setScreen("start")}>Home</button>
+    </div></div>;
+  }
+
+  // ── WIN ──
+  if(screen==="win"){
+    return <div style={S.shell}><div style={S.card}>
+      <span style={S.badge}>Quest complete</span>
+      <h1 style={S.hat}>{name} is a LEGEND!</h1>
+      <div style={S.art(color.hex)}>{heroArt}</div>
+      <p style={{color:"#c4b8a4",lineHeight:1.6,textAlign:"center"}}>You conquered all 20 levels and the Chaos Lord with <strong style={{color:"#c9a227"}}>{points} points</strong>!</p>
+      <QuestMap trail={trail} level={20} />
+      <button style={S.cta()} onClick={()=>setScreen("stats")}>📊 See report card</button>
+      <button style={S.ghost} onClick={()=>setScreen("customize")}>Play again ↺</button>
+    </div></div>;
+  }
+
+  // ── PLAY ──
+  if(!question) return <div style={S.shell}><div style={S.card}><div style={S.stat}>Loading…</div></div></div>;
+  const isBonus=question.kind==="Element", isPassage=question.subtype==="passage";
+  return <div style={S.shell}><div style={S.card}>
+    <div style={S.row}><span style={S.badge}>Level {level} / 20</span><span style={S.stat}>★{points} {streak>=2&&`· 🔥${streak}`} · ❤{hp} · ✦{special}</span></div>
+    <div style={S.row}>
+      <div style={{...S.art(color.hex),flex:"0 0 86px",margin:0}}>{heroArt}</div>
+      <div style={{flex:1}}><div style={{fontWeight:700,fontSize:18}}>{name} the {titleFor(level)}</div>
+        <div style={{...S.stat,marginBottom:6}}>{cls.name} · Question {qIdx+1} of 5</div>
+        <div style={S.bar}><div style={S.fill(qIdx/5*100,color.hex)} /></div></div>
+    </div>
+    <div style={{...S.stat,marginTop:16,color:isBonus?"#c9a227":"#a89a82"}}>{isBonus?"⚡ PERIODIC-TABLE BONUS":isPassage?"📖 Read carefully, then answer.":"Answer to power up your hero."}</div>
+    {isPassage && <div style={S.passage}>{question.passage}</div>}
+    <div style={S.q}><span style={{...S.badge,marginBottom:0,marginRight:8}}>{isPassage?"Comprehension":question.kind}</span><br/>{question.prompt}</div>
+    {question.options.map(opt=>{ let st="idle"; if(picked){ if(opt===question.answer)st="right"; else if(opt===picked)st="wrong"; }
+      return <button key={opt} style={S.opt(st)} disabled={!!picked} onClick={()=>answer(opt)}>{opt}</button>; })}
+    {picked && (<>
+      <div style={S.feedback(picked===question.answer)}>{picked===question.answer?`Correct! +${isBonus?50:isPassage?30:20}${streak>=3?" +10 streak":""} pts.`:`Not quite — the answer was ${question.answer}.`}</div>
+      <button style={S.cta()} onClick={next}>{qIdx<4?"Next question →":"Reach the fork →"}</button>
+    </>)}
+  </div></div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
