@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quest Academy — Learn · Battle · Adventure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #1c1a17;
+    background-image: radial-gradient(circle at 50% 0%, #2a2620 0%, #14120f 70%);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #e8e0d2;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; }
+  button:focus-visible { outline: 3px solid #c9a227; outline-offset: 2px; }
+  input:focus-visible { outline: 2px solid #c9a227; }
+  .qa-avatar-bob { animation: qaBob 2.6s ease-in-out infinite; transform-origin: center; }
+  @keyframes qaBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  .qa-scroll::-webkit-scrollbar { width: 8px; }
+  .qa-scroll::-webkit-scrollbar-thumb { background: #3a342b; border-radius: 8px; }
+  button { touch-action: manipulation; }
+  @media (max-width: 860px){
+    body { font-size: 17px; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, .qa-avatar-bob { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+/* ═══════════════════════════════════════════════════════════════
+   QUEST ACADEMY v6
+   • 3-column layout: blocky avatar · game · winding quest map
+   • Easy / Medium / Hard difficulty
+   • Generated question banks (thousands of items, no repeats per run)
+   • Saved progress (localStorage)
+   ═══════════════════════════════════════════════════════════════ */
+
+const rint = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+/* ── no-repeat tracker (per run) ───────────────────────────── */
+let SEEN = new Set();
+function resetSeen(){ SEEN = new Set(); }
+function fresh(makeFn, tries=40){
+  for(let i=0;i<tries;i++){ const q=makeFn(); if(q && !SEEN.has(q.prompt)){ SEEN.add(q.prompt); return q; } }
+  const q=makeFn(); SEEN.add(q.prompt+"#"+rint(1,1e6)); return q; // give up gracefully
+}
+function mcq(kind, subtype, prompt, answer, distractorPool, extra={}){
+  const opts=new Set([answer]);
+  const pool=shuffle(distractorPool.filter(d=>d!==answer));
+  for(const d of pool){ if(opts.size>=4) break; opts.add(d); }
+  // pad if pool too small
+  while(opts.size<4){ opts.add(answer+"·"+opts.size); }
+  return { kind, subtype, prompt, options: shuffle([...opts]).slice(0,4), answer, ...extra };
+}
+
+/* ═══════════════ WORD BANKS (drive generated questions) ═══════ */
+// each: word -> a correct synonym. Distractors drawn from other entries' words.
+const SYN = {
+  easy: [["big","large"],["small","little"],["happy","glad"],["sad","unhappy"],["fast","quick"],
+    ["slow","sluggish"],["cold","chilly"],["hot","warm"],["nice","kind"],["loud","noisy"],
+    ["scared","afraid"],["smart","clever"],["pretty","lovely"],["tired","sleepy"],["mad","angry"],
+    ["start","begin"],["end","finish"],["jump","leap"],["talk","speak"],["look","see"]],
+  medium: [["brave","courageous"],["tiny","minuscule"],["huge","enormous"],["calm","peaceful"],
+    ["strange","unusual"],["fix","repair"],["choose","select"],["build","construct"],["story","tale"],
+    ["smart","intelligent"],["quiet","silent"],["wealthy","rich"],["famous","renowned"],["gather","collect"],
+    ["shiny","gleaming"],["empty","vacant"],["wild","untamed"],["fair","just"],["odd","peculiar"],["rapid","swift"]],
+  hard: [["abundant","plentiful"],["ancient","antique"],["benevolent","kind"],["candid","honest"],
+    ["diligent","hardworking"],["elated","overjoyed"],["fragile","delicate"],["gigantic","colossal"],
+    ["humble","modest"],["intricate","complex"],["jovial","cheerful"],["luminous","glowing"],
+    ["meager","scarce"],["novel","new"],["obstinate","stubborn"],["pristine","spotless"],
+    ["resilient","tough"],["serene","tranquil"],["vibrant","lively"],["weary","exhausted"]],
+};
+const ANT = {
+  easy: [["up","down"],["in","out"],["hot","cold"],["big","small"],["fast","slow"],["happy","sad"],
+    ["day","night"],["open","closed"],["full","empty"],["high","low"],["soft","hard"],["wet","dry"],
+    ["light","dark"],["new","old"],["near","far"],["loud","quiet"],["clean","dirty"],["start","stop"],
+    ["push","pull"],["win","lose"]],
+  medium: [["ancient","modern"],["expand","shrink"],["arrive","depart"],["brave","cowardly"],
+    ["generous","stingy"],["victory","defeat"],["ascend","descend"],["fragile","sturdy"],["rapid","sluggish"],
+    ["increase","decrease"],["accept","reject"],["polite","rude"],["wild","tame"],["smooth","rough"],
+    [" allow","forbid"],["gather","scatter"],["praise","criticize"],["wealthy","poor"],["calm","frantic"],["clear","cloudy"]],
+  hard: [["abundant","scarce"],["benevolent","cruel"],["candid","secretive"],["diligent","lazy"],
+    ["elated","miserable"],["humble","arrogant"],["luminous","dim"],["obstinate","flexible"],
+    ["pristine","filthy"],["serene","chaotic"],["transparent","opaque"],["frugal","wasteful"],
+    ["genuine","fake"],["optimistic","pessimistic"],["unite","divide"],["expand","contract"],
+    ["permanent","temporary"],["rigid","pliable"],["vast","minute"],["zenith","nadir"]],
+};
+const POS = {
+  noun: ["mountain","river","castle","dragon","teacher","garden","planet","wizard","forest","engine","island","market","tower","comet","harbor","canyon","lantern","anchor","meadow","glacier"],
+  verb: ["gallop","whisper","construct","explore","scatter","tremble","summon","navigate","forge","wander","vanish","collide","sprint","gather","launch","stumble","conquer","examine","rescue","blossom"],
+  adj:  ["sparkly","fierce","ancient","slippery","golden","massive","gentle","crimson","frozen","brilliant","jagged","silent","mighty","fragile","radiant","stormy","velvet","hollow","vivid","nimble"],
+  adv:  ["quickly","gently","loudly","bravely","silently","carefully","eagerly","rarely","swiftly","clumsily","boldly","quietly","hardly","neatly","wildly","calmly","gladly","fiercely","softly","promptly"],
+};
+const SPELL = {
+  easy: [["friend","freind","frend","fryend"],["because","becuase","becouse","becaus"],
+    ["people","peopel","peeple","pepole"],["pretty","prety","pritty","prettie"],
+    ["little","littel","litle","liddle"],["happy","happi","hapy","happey"],
+    ["school","scool","skool","schoool"],["family","famly","familey","familly"],
+    ["animal","animial","aminal","animel"],["color","colur","collor","colar"]],
+  medium: [["beautiful","beutiful","beautifull","biutiful"],["surprise","suprise","surprize","supprise"],
+    ["tomorrow","tommorow","tomorow","tommorrow"],["different","diffrent","diferent","differant"],
+    ["favorite","favrite","favorit","favourit"],["believe","beleive","belive","believ"],
+    ["enough","enuff","enough ","enouf"],["important","importent","importint","inportant"],
+    ["probably","probly","probibly","probabley"],["beginning","begining","beggining","beginnning"]],
+  hard: [["necessary","neccessary","necesary","nessecary"],["separate","seperate","separite","seperat"],
+    ["embarrass","embarass","embarras","embarrass "],["rhythm","rythm","rhythym","rhytm"],
+    ["conscience","concience","consience","conscence"],["mischievous","mischievious","mischevous","mischeivous"],
+    ["definitely","definately","definitly","definetly"],["occasionally","occasionaly","ocasionally","occassionally"],
+    ["privilege","priviledge","privelege","privlege"],["acquire","aquire","acquirre","accquire"]],
+};
+const PLURAL = [["mouse","mice","mouses","meese","mousies"],["child","children","childs","childes","childrens"],
+  ["tooth","teeth","tooths","teeths","toothes"],["leaf","leaves","leafs","leafes","leaves"],
+  ["foot","feet","foots","feets","footes"],["cactus","cacti","cactuses","cactus","cactises"],
+  ["goose","geese","gooses","geeses","geese s"],["knife","knives","knifes","knive","knifves"],
+  ["wolf","wolves","wolfs","wolfes","wol ves"],["man","men","mans","mens","mannes"],
+  ["woman","women","womans","womens","womene"],["fish","fish","fishes","fishs","fishies"],
+  ["person","people","persons","peoples","personnes"],["half","halves","halfs","halfes","hal ves"],
+  ["potato","potatoes","potatos","potatoe","potatose"]];
+const PAST = [["swim","swam","swimmed","swum","swimed"],["run","ran","runned","run","ranned"],
+  ["bring","brought","bringed","brang","broughten"],["catch","caught","catched","cotch","caughted"],
+  ["fly","flew","flied","flowed","flyed"],["teach","taught","teached","taughted","teechd"],
+  ["go","went","goed","gone","wented"],["eat","ate","eated","eaten","ated"],
+  ["see","saw","seed","seen","sawed"],["write","wrote","writed","written","wroted"],
+  ["sing","sang","singed","sung","sanged"],["drink","drank","drinked","drunk","dranked"],
+  ["begin","began","beginned","begun","beganed"],["throw","threw","throwed","thrown","threwed"],
+  ["buy","bought","buyed","boughten","buied"],["think","thought","thinked","thunk","thoughted"]];
+const PASSAGES = [
+  ["Maya planted three seeds in spring. By summer, two had grown into tall sunflowers, but the third never sprouted. She was proud of her garden anyway.","How many seeds grew?",["two","three","one","none"],"two","easy"],
+  ["The desert fox sleeps in a cool burrow all day. When the sun sets and the sand cools, it comes out to hunt insects under the stars.","When does the fox hunt?",["at night","at noon","in the morning","never"],"at night","easy"],
+  ["Diego forgot his lunch. His friend Sam shared half a sandwich. Diego promised to bring Sam a cookie the next day to say thanks.","Why the cookie?",["to thank Sam","he was hungry","he lost a bet","a holiday"],"to thank Sam","easy"],
+  ["Rosa found a hurt bird. She kept it warm and fed it until its wing healed. Two weeks later she opened the box and watched it fly away.","What happened to the bird?",["it flew away","it stayed","it could not fly","it ran off"],"it flew away","easy"],
+  ["The old lighthouse had been dark for twenty years. One stormy night a young sailor climbed the steps and lit the lamp, guiding a lost ship safely to shore.","What did the sailor do?",["lit the lamp","sailed away","built a ship","left"],"lit the lamp","medium"],
+  ["Aisha practiced piano every day for a month. At the recital her hands shook, but she played the whole song without one mistake. The crowd cheered.","How did it go?",["perfectly","she forgot it","she skipped it","badly"],"perfectly","medium"],
+  ["A turtle and a hare raced. The hare ran far ahead, then napped. The turtle kept walking slowly and steadily, and crossed the finish line first.","Why did the turtle win?",["it never stopped","it was faster","the hare cheated","a shortcut"],"it never stopped","medium"],
+  ["Mr. Lee reached his bakery at four each morning to start the ovens, so warm loaves would be ready the moment customers arrived at seven.","Why arrive early?",["to bake in time","to clean","to meet a friend","to lock up"],"to bake in time","medium"],
+  ["The young inventor failed eleven times before her tiny solar lamp finally glowed. She wrote in her notebook that every failure had taught her one useful thing.","What did failure give her?",["a useful lesson each time","nothing at all","a new lamp","more money"],"a useful lesson each time","hard"],
+  ["Though the village feared the cave, Tomas explored it and found not a monster but an underground spring. Soon the whole village had fresh water for the dry season.","What was in the cave?",["a spring","a monster","gold","nothing"],"a spring","hard"],
+  ["The orchestra tuned their instruments nervously. When the conductor finally raised her baton, the hall fell silent, and the first note seemed to hang in the air like magic.","What happened when she raised the baton?",["the hall went silent","everyone left","the lights failed","they kept tuning"],"the hall went silent","hard"],
+  ["Kept indoors by the rain, the twins built a fort from couch cushions and declared it a castle. By afternoon the storm was forgotten entirely.","How did they feel about the rain later?",["they forgot it","they were upset","they went outside","they were bored"],"they forgot it","hard"],
+];
+// elements (expanded)
+const ELEMENTS = [["Hydrogen","H"],["Helium","He"],["Lithium","Li"],["Beryllium","Be"],["Boron","B"],["Carbon","C"],["Nitrogen","N"],["Oxygen","O"],["Fluorine","F"],["Neon","Ne"],["Sodium","Na"],["Magnesium","Mg"],["Aluminum","Al"],["Silicon","Si"],["Phosphorus","P"],["Sulfur","S"],["Chlorine","Cl"],["Argon","Ar"],["Potassium","K"],["Calcium","Ca"],["Scandium","Sc"],["Titanium","Ti"],["Vanadium","V"],["Chromium","Cr"],["Manganese","Mn"],["Iron","Fe"],["Cobalt","Co"],["Nickel","Ni"],["Copper","Cu"],["Zinc","Zn"],["Gallium","Ga"],["Germanium","Ge"],["Arsenic","As"],["Selenium","Se"],["Bromine","Br"],["Krypton","Kr"],["Rubidium","Rb"],["Strontium","Sr"],["Silver","Ag"],["Tin","Sn"],["Iodine","I"],["Xenon","Xe"],["Barium","Ba"],["Tungsten","W"],["Platinum","Pt"],["Gold","Au"],["Mercury","Hg"],["Lead","Pb"],["Radium","Ra"],["Uranium","U"],["Plutonium","Pu"]];
+const ELEM_SYMS = ELEMENTS.map(e=>e[1]);
+
+/* ═══════════════ GENERATORS (difficulty-aware) ═══════════════ */
+function gSyn(diff){ const tier = diff; const list=SYN[tier]; const [w,s]=pick(list);
+  const distract = shuffle(Object.values(SYN).flat().map(p=>p[1]).filter(x=>x!==s)).slice(0,8);
+  return mcq("Reading","syn",`Synonym for '${w}'?`,s,distract); }
+function gAnt(diff){ const list=ANT[diff]; const [w,a]=pick(list);
+  const distract = shuffle(Object.values(ANT).flat().map(p=>p[1]).filter(x=>x!==a)).slice(0,8);
+  return mcq("Reading","ant",`Opposite of '${w}'?`,a,distract); }
+function gPOS(){ const cats=["noun","verb","adj","adv"]; const target=pick(cats);
+  const label={noun:"NOUN",verb:"VERB",adj:"ADJECTIVE",adv:"ADVERB"}[target];
+  const answer=pick(POS[target]);
+  const distract = shuffle(cats.filter(c=>c!==target).flatMap(c=>POS[c]));
+  return mcq("Reading","pos",`Which word is ${label==="ADJECTIVE"||label==="ADVERB"?"an":"a"} ${label}?`,answer,distract); }
+function gSpell(diff){ const [right,...wrong]=pick(SPELL[diff]);
+  return mcq("Reading","spell","Pick the correctly spelled word:",right,wrong.map(w=>w.trim())); }
+function gPlural(){ const [s,right,...wrong]=pick(PLURAL);
+  return mcq("Reading","plural",`Plural of '${s}'?`,right,wrong.map(w=>w.trim())); }
+function gPast(){ const [b,right,...wrong]=pick(PAST);
+  return mcq("Reading","past",`Past tense of '${b}'?`,right,wrong.map(w=>w.trim())); }
+function gPassage(diff){ const pool=PASSAGES.filter(p=>p[4]===diff); const P=pick(pool.length?pool:PASSAGES);
+  const [text,q,opts,answer]=P; return { kind:"Reading",subtype:"passage",passage:text,prompt:q,options:shuffle(opts),answer }; }
+function gElement(){ const [name,sym]=pick(ELEMENTS);
+  return mcq("Element","symbol",`BONUS! Chemical symbol for ${name}?`,sym,ELEM_SYMS); }
+
+
+/* real-life reading: signs, labels, instructions, schedules */
+const RW_READ = [
+  ["A sign reads: 'Store hours 9 AM to 6 PM.' If it is 7 PM, is the store open?",["No, it is closed","Yes, it is open","Only on weekends","It never closes"],"No, it is closed"],
+  ["A recipe says 'Bake for 25 minutes.' You put it in at 4:00. When is it done?",["4:25","4:50","5:00","4:15"],"4:25"],
+  ["A label says 'Serves 4.' How many servings for 8 people if you make it twice?",["8","4","2","16"],"8"],
+  ["A bus schedule shows buses every 15 minutes starting 8:00. When is the 3rd bus?",["8:30","8:15","8:45","9:00"],"8:30"],
+  ["A package says 'Some assembly required.' What does that mean?",["You must build part of it","It is already built","It cannot be built","It is broken"],"You must build part of it"],
+  ["A weather app says '80% chance of rain.' What should you probably bring?",["an umbrella","sunglasses only","a snow shovel","nothing"],"an umbrella"],
+  ["A video game says 'Saving... do not turn off.' What should you do?",["wait until it finishes","turn it off now","unplug it","press every button"],"wait until it finishes"],
+  ["A door sign says 'Pull.' To open it you should:",["pull it toward you","push it away","knock loudly","kick it"],"pull it toward you"],
+  ["A carton says 'Best by May 5.' Today is May 3. The milk is:",["still good","expired","frozen","empty"],"still good"],
+  ["Instructions say 'Step 2: Add water before flour.' What goes in first?",["water","flour","sugar","eggs"],"water"],
+];
+function gRWRead(){ const [prompt,options,answer]=pick(RW_READ); return mcq("Reading","rwread",prompt,answer,options.filter(o=>o!==answer)); }
+
+function makeReading(diff){
+  const r = rint(1,100);
+  if(r<=14) return gRWRead(); // real-life reading appears across all difficulties
+  // difficulty shifts the mix; passages appear more on hard
+  if(diff==="easy"){
+    if(r<=22) return gSyn("easy");
+    if(r<=44) return gAnt("easy");
+    if(r<=62) return gPOS();
+    if(r<=78) return gSpell("easy");
+    if(r<=88) return gPlural();
+    if(r<=96) return gPast();
+    return gPassage("easy");
+  }
+  if(diff==="hard"){
+    if(r<=18) return gSyn("hard");
+    if(r<=36) return gAnt("hard");
+    if(r<=50) return gPOS();
+    if(r<=64) return gSpell("hard");
+    if(r<=74) return gPlural();
+    if(r<=84) return gPast();
+    return gPassage("hard");
+  }
+  // medium
+  if(r<=20) return gSyn("medium");
+  if(r<=40) return gAnt("medium");
+  if(r<=56) return gPOS();
+  if(r<=70) return gSpell("medium");
+  if(r<=80) return gPlural();
+  if(r<=90) return gPast();
+  return gPassage("medium");
+}
+
+const commafy=(n)=>n.toLocaleString('en-US');
+function numOpts(answer, spread){
+  const opts=new Set([answer]); let g=0;
+  while(opts.size<4 && g++<60){ const c=answer+rint(-spread,spread); if(c!==answer && c>=0) opts.add(c); }
+  while(opts.size<4){ opts.add(answer+opts.size*Math.max(1,Math.round(spread/3))); }
+  return shuffle([...opts]);
+}
+function mcNum(kind,subtype,prompt,answer,spread,unit){
+  const nums=numOpts(answer,spread);
+  const fmt=(n)=> unit?`${commafy(n)} ${unit}`:commafy(n);
+  return { kind, subtype, prompt, options: nums.map(fmt), answer: fmt(answer) };
+}
+
+// big add/subtract: scales thousands -> millions with level & difficulty
+function bigAddSub(level,diff){
+  const t = diff==="easy"?0 : diff==="hard"?2 : 1;
+  const r = clamp(Math.floor(level/4)+t,0,4);
+  const ranges=[[1000,9999],[10000,99999],[100000,999999],[250000,2500000],[1000000,9000000]];
+  const [lo,hi]=ranges[r];
+  const x=rint(lo,hi), y=rint(lo,hi);
+  if(rint(0,1)){ const a=x+y; return mcNum("Math","bigadd",`${commafy(x)} + ${commafy(y)} = ?`,a,Math.max(50,Math.round(a*0.02))); }
+  const big=Math.max(x,y), small=Math.min(x,y), a=big-small;
+  return mcNum("Math","bigsub",`${commafy(big)} − ${commafy(small)} = ?`,a,Math.max(50,Math.round(big*0.02)));
+}
+
+// real-world word problems across length, volume, tech, money, time, weight
+const RW = {
+  length(level,diff){ const w=rint(1,3);
+    if(w===1){ const yd=rint(2,diff==="hard"?40:12); return mcNum("Math","len",`A rope is ${yd} yards long. How many feet? (1 yard = 3 feet)`,yd*3,4,"feet"); }
+    if(w===2){ const mi=rint(2,diff==="hard"?20:6); return mcNum("Math","len",`The trail is ${mi} miles. How many feet? (1 mile = 5,280 feet)`,mi*5280,Math.round(mi*5280*0.03),"feet"); }
+    const ft=rint(3,diff==="hard"?60:24); return mcNum("Math","len",`A board is ${ft} feet long. How many inches? (1 foot = 12 inches)`,ft*12,8,"inches"); },
+  volume(level,diff){ const w=rint(1,3);
+    if(w===1){ const g=rint(2,diff==="hard"?25:8); return mcNum("Math","vol",`A cooler holds ${g} gallons. How many quarts? (1 gallon = 4 quarts)`,g*4,4,"quarts"); }
+    if(w===2){ const q=rint(2,diff==="hard"?24:10); return mcNum("Math","vol",`You have ${q} quarts of water. How many cups? (1 quart = 4 cups)`,q*4,4,"cups"); }
+    const g=rint(2,diff==="hard"?20:6); return mcNum("Math","vol",`A tank holds ${g} gallons. How many cups? (1 gallon = 16 cups)`,g*16,8,"cups"); },
+  tech(level,diff){ const w=rint(1,3);
+    if(w===1){ const tb=rint(1,diff==="hard"?8:3); return mcNum("Math","tech",`A drive is ${tb} TB. How many GB? (1 TB = 1,024 GB)`,tb*1024,200,"GB"); }
+    if(w===2){ const cnt=rint(3,diff==="hard"?12:6); const chip=pick([256,512]); return mcNum("Math","tech",`You install ${cnt} chips of ${chip} GB each. Total storage?`,cnt*chip,256,"GB"); }
+    const gb=rint(2,diff==="hard"?16:8); return mcNum("Math","tech",`A game is ${gb} GB. How many MB? (1 GB = 1,024 MB)`,gb*1024,300,"MB"); },
+  money(level,diff){ const w=rint(1,3);
+    if(w===1){ const price=rint(3,diff==="hard"?40:15); const paid=price+rint(1,20); return mcNum("Math","money",`A toy costs $${price}. You pay $${paid}. How much change?`,paid-price,3,"dollars"); }
+    if(w===2){ const item=rint(2,9), each=rint(2,diff==="hard"?12:6); return mcNum("Math","money",`${item} packs of cards cost $${each} each. Total cost?`,item*each,5,"dollars"); }
+    const q=rint(4,diff==="hard"?40:20); return mcNum("Math","money",`You have ${q} quarters. How many cents? (1 quarter = 25 cents)`,q*25,30,"cents"); },
+  time(level,diff){ const w=rint(1,3);
+    if(w===1){ const h=rint(2,diff==="hard"?12:6); return mcNum("Math","time",`Practice lasts ${h} hours. How many minutes? (1 hour = 60 minutes)`,h*60,30,"minutes"); }
+    if(w===2){ const d=rint(2,diff==="hard"?14:7); return mcNum("Math","time",`A trip takes ${d} days. How many hours? (1 day = 24 hours)`,d*24,12,"hours"); }
+    const m=rint(2,diff==="hard"?20:8); return mcNum("Math","time",`A marathon is ${m*60} minutes. How many hours? (60 min = 1 hour)`,m,2,"hours"); },
+  weight(level,diff){ const w=rint(1,2);
+    if(w===1){ const lb=rint(2,diff==="hard"?30:10); return mcNum("Math","wt",`A dog weighs ${lb} pounds. How many ounces? (1 pound = 16 ounces)`,lb*16,12,"ounces"); }
+    const tons=rint(2,diff==="hard"?8:3); return mcNum("Math","wt",`A truck carries ${tons} tons. How many pounds? (1 ton = 2,000 pounds)`,tons*2000,400,"pounds"); },
+};
+function realWorld(level,diff){ return pick(Object.values(RW))(level,diff); }
+
+function makeMath(level, diff){
+  const base = clamp(level,1,20);
+  const mult = diff==="easy"?0.6 : diff==="hard"?1.6 : 1;
+  const d = Math.max(1, Math.round(base*mult));
+  // weighted type menu: big add/sub and real-world feature heavily
+  const menu = diff==="easy"
+    ? ["big","big","rw","rw","mul","add","sub","frac"]
+    : diff==="hard"
+    ? ["big","big","big","rw","rw","rw","mul","div","frac","cmp"]
+    : ["big","big","rw","rw","rw","mul","div","add","sub","frac","cmp"];
+  const t = pick(menu);
+  if(t==="big") return bigAddSub(level,diff);
+  if(t==="rw")  return realWorld(level,diff);
+  let q,a,sub=t;
+  if(t==="add"){ const x=rint(d*5,d*40+50), y=rint(d*3,d*30+40); q=`${commafy(x)} + ${commafy(y)} = ?`; a=x+y; }
+  else if(t==="sub"){ const x=rint(d*8,d*50+80), y=rint(1,x); q=`${commafy(x)} − ${commafy(y)} = ?`; a=x-y; }
+  else if(t==="mul"){ const hi=diff==="hard"?15:12; const x=rint(2,Math.min(d+3,hi)), y=rint(2,Math.min(d+2,hi)); q=`${x} × ${y} = ?`; a=x*y; }
+  else if(t==="div"){ const hi=diff==="hard"?15:12; const y=rint(2,Math.min(d+2,hi)), b=rint(2,Math.min(d+3,hi)); q=`${y*b} ÷ ${y} = ?`; a=b; }
+  else if(t==="cmp"){ let x=rint(d*100,d*900+200), y=rint(d*100,d*900+200); if(x===y)y=x+rint(1,99);
+    const big=Math.max(x,y), small=Math.min(x,y); const opts=new Set([big,small]); let g=0;
+    while(opts.size<4&&g++<50){ opts.add(big+rint(1,120)); } while(opts.size<4){ opts.add(big+opts.size+30); }
+    return { kind:"Math",subtype:"cmp",prompt:`Which is greater: ${commafy(x)} or ${commafy(y)}?`,options:shuffle([...opts]).map(commafy),answer:commafy(big) }; }
+  else { const denom=pick(diff==="hard"?[2,3,4,5,6,8]:[2,3,4,5]); const whole=denom*rint(2,Math.min(d+2,12)); q=`What is 1/${denom} of ${whole}?`; a=whole/denom; }
+  return mcNum("Math",sub,q,a,Math.max(4,Math.round(a*0.05)));
+}
+
+
+function buildQuestion(level, idx, diff){
+  if(idx===4) return fresh(()=>gElement());
+  if(idx%2===0) return fresh(()=>makeMath(level,diff));
+  return fresh(()=>makeReading(diff));
+}
+function battleQuestion(level, diff){ return fresh(()=> rint(0,1)?makeMath(level,diff):makeReading(diff)); }
+
+/* ═══════════════ PATHS / MONSTERS / CLASSES ═══════════════════ */
+const DESTINATIONS = [
+  { name:"the Whispering Woods", blurb:"Pines hum a tune. Fireflies light a winding trail." },
+  { name:"the Sunken River", blurb:"Cool water rushes over smooth stones. A raft waits." },
+  { name:"the Crystal Caverns", blurb:"Walls glitter with violet gems and echoes." },
+  { name:"the Foggy Swamp", blurb:"Mist curls over lily pads. Something croaks." },
+  { name:"the Dragon's Dungeon", blurb:"Torches flicker on damp stone. Chains rattle." },
+  { name:"the Windy Cliffs", blurb:"Eagles wheel above a dizzying drop." },
+  { name:"the Lost Library", blurb:"Endless shelves of dusty spellbooks." },
+  { name:"the Frozen Pass", blurb:"Snow crunches. Icicles hang like glass swords." },
+  { name:"the Ember Volcano", blurb:"Heat shimmers off black rock. Lava glows below." },
+  { name:"the Moonlit Meadow", blurb:"Silver grass sways. A unicorn watches." },
+  { name:"the Sunken Shipwreck", blurb:"Barnacled timbers and buried treasure." },
+  { name:"the Clockwork City", blurb:"Brass gears turn. Steam hisses from pipes." },
+  { name:"the Mushroom Hollow", blurb:"Giant glowing mushrooms tower overhead." },
+  { name:"the Thunder Plains", blurb:"Storm clouds boom. Lightning paints the sky." },
+  { name:"the Starlight Tower", blurb:"A spiral stair climbs toward the stars." },
+  { name:"the Goblin Market", blurb:"Stalls of odd trinkets. A merchant waves." },
+];
+const MONSTERS = [
+  { name:"Slime Sprout",   art:"(• ◡ •)", hp:30,  color:"#5b8c6a" },
+  { name:"Cave Bat",       art:"^ᴥ^",     hp:35,  color:"#6a5b8c" },
+  { name:"Mud Crawler",    art:"≈o≈",     hp:40,  color:"#8c7a5b" },
+  { name:"Spark Imp",      art:"⚡‹•›⚡",  hp:45,  color:"#c9a227" },
+  { name:"Stone Troll",    art:"[ -_- ]", hp:55,  color:"#9a8c7a" },
+  { name:"Frost Wisp",     art:"❄(°o°)",  hp:55,  color:"#7fb0c9" },
+  { name:"Bog Lurker",     art:"~(⊙﹏⊙)~",hp:60,  color:"#5b7a5b" },
+  { name:"Sand Scorpion",  art:"›••‹⌐",   hp:65,  color:"#c98a3a" },
+  { name:"Shadow Hound",   art:"ᕕ(ᐛ)ᕗ",  hp:70,  color:"#555066" },
+  { name:"Gear Golem",     art:"[¤=¤]",   hp:80,  color:"#8a8f99" },
+  { name:"Storm Harpy",    art:"\\^v^/",  hp:80,  color:"#8a6ac9" },
+  { name:"Lava Newt",      art:"<≈≈>",    hp:85,  color:"#b5683a" },
+  { name:"Ghost Knight",   art:"†(°□°)†", hp:90,  color:"#9fb0c4" },
+  { name:"Crystal Spider", art:"/\\◇/\\", hp:95,  color:"#a07ec9" },
+  { name:"Thunder Roc",    art:"⟨~Ω~⟩",   hp:105, color:"#c9b04a" },
+  { name:"Bone Dragon",    art:"≈≈D=",    hp:115, color:"#d8d2c2" },
+  { name:"Void Wraith",    art:"((●))",   hp:120, color:"#5a4f72" },
+  { name:"Magma Titan",    art:"[▮▮▮]",   hp:130, color:"#c24a2a" },
+  { name:"Star Serpent",   art:"~*~*~",   hp:140, color:"#4a78c9" },
+  { name:"CHAOS LORD",     art:"☠‹×›☠",   hp:220, color:"#a62a4a", boss:true },
+];
+const CLASSES = [
+  { id:"knight",  name:"Knight",  dmg:18, blurb:"Hits hard with a sword.", ability:"Mighty Blow: 3× damage." },
+  { id:"mage",    name:"Mage",    dmg:16, blurb:"Casts powerful spells.", ability:"Fireball: hit + burn." },
+  { id:"ranger",  name:"Ranger",  dmg:15, blurb:"Fast arrows, never miss.", ability:"Double Shot: 2 hits." },
+  { id:"guardian",name:"Guardian",dmg:14, blurb:"Built like a fortress.", ability:"Bulwark: hit + shield." },
+];
+const COLORS = [
+  { id:"gold", hex:"#c9a227" }, { id:"emerald", hex:"#3fa65f" }, { id:"sapphire", hex:"#3f7fd6" },
+  { id:"crimson", hex:"#d6493f" }, { id:"violet", hex:"#9a5fd6", unlockPts:300 },
+  { id:"cyan", hex:"#34c2c2", unlockPts:600 }, { id:"hotpink", hex:"#e05bb0", unlockPts:1000 },
+];
+const DIFFS = {
+  easy:   { label:"Easy",   mHp:0.7, mDmg:0.65, blurb:"Smaller numbers, gentler battles." },
+  medium: { label:"Medium", mHp:1.0, mDmg:1.0,  blurb:"A balanced challenge." },
+  hard:   { label:"Hard",   mHp:1.35,mDmg:1.4,  blurb:"Big numbers, tough monsters." },
+};
+const TITLES=["Apprentice","Adventurer","Knight","Champion","Legend"];
+const titleFor=(l)=> l>=20?TITLES[4]:l>=15?TITLES[3]:l>=10?TITLES[2]:l>=5?TITLES[1]:TITLES[0];
+
+/* ═══════════════ SAVE SYSTEM ═════════════════════════════════ */
+const SAVE_KEY="questAcademy.v6";
+const loadSave=()=>{ try{ return JSON.parse(localStorage.getItem(SAVE_KEY))||null; }catch{ return null; } };
+const writeSave=(d)=>{ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(d)); }catch{} };
+const blankProfile=()=>({ bestPoints:0, bestLevel:1, unlockedColors:["gold","emerald","sapphire","crimson"],
+  lifetime:{Math:{seen:0,right:0},ReadingVocab:{seen:0,right:0},ReadingPassage:{seen:0,right:0},Element:{seen:0,right:0},bestStreak:0,monstersBeaten:0},
+  inProgress:null, lastName:"" });
+
+/* ═══════════════ BLOCKY (Roblox-style) AVATAR ════════════════ */
+function Avatar({ color, clsId, size=200, bob=true }){
+  const c = color;
+  const dark = shade(c,-28), light = shade(c,22);
+  const skin = "#e9b48a", skinD="#cf9a72";
+  // class accessories
+  const gear = {
+    knight: <g>
+      {/* sword */}
+      <g transform="translate(150,40)"><rect x="0" y="0" width="6" height="60" rx="2" fill="#cfd6e0" stroke="#8a93a3"/><rect x="-6" y="58" width="18" height="6" rx="2" fill="#c9a227"/><rect x="1" y="62" width="4" height="12" fill="#8a6a3a"/></g>
+      {/* shield on back hand */}
+      <g transform="translate(20,86)"><path d="M0 0 H26 V18 Q13 30 0 18 Z" fill="#c9a227" stroke="#8a6a2a" strokeWidth="2"/><circle cx="13" cy="12" r="4" fill="#fff6da"/></g>
+    </g>,
+    mage: <g>
+      {/* staff */}
+      <g transform="translate(150,34)"><rect x="0" y="0" width="6" height="74" rx="3" fill="#8a6a3a"/><circle cx="3" cy="-2" r="9" fill="#7fd0ff" stroke="#3f7fd6" strokeWidth="2"/></g>
+      {/* wizard hat */}
+      <path d="M58 44 L100 -2 L142 44 Z" fill={dark} stroke="#2a2620" strokeWidth="2"/>
+      <circle cx="100" cy="0" r="6" fill="#ffe27a"/>
+    </g>,
+    ranger: <g>
+      {/* bow */}
+      <g transform="translate(150,40)"><path d="M0 0 Q26 30 0 60" fill="none" stroke="#8a6a3a" strokeWidth="5"/><line x1="0" y1="0" x2="0" y2="60" stroke="#d8cdb6" strokeWidth="1.5"/></g>
+      {/* feather cap */}
+      <path d="M62 40 q10 -22 40 -22 q-6 14 -20 22 Z" fill="#3fa65f" stroke="#2a2620" strokeWidth="1.5"/>
+    </g>,
+    guardian: <g>
+      {/* big shield */}
+      <g transform="translate(140,52)"><path d="M0 0 H40 V30 Q20 50 0 30 Z" fill="#9fb0c4" stroke="#5a6b80" strokeWidth="3"/><path d="M20 6 V40 M6 20 H34" stroke="#5a6b80" strokeWidth="3"/></g>
+      {/* helmet visor */}
+      <rect x="64" y="44" width="72" height="12" rx="4" fill="#9fb0c4" stroke="#5a6b80" strokeWidth="2"/>
+    </g>,
+  }[clsId];
+
+  return (
+    <svg viewBox="0 0 200 230" width={size} height={size*230/200} className={bob?"qa-avatar-bob":""} role="img" aria-label="Your hero">
+      {/* shadow */}
+      <ellipse cx="100" cy="222" rx="46" ry="7" fill="#000" opacity="0.35"/>
+      {/* legs */}
+      <rect x="74"  y="170" width="22" height="46" rx="4" fill={dark}/>
+      <rect x="104" y="170" width="22" height="46" rx="4" fill={dark}/>
+      <rect x="74"  y="206" width="22" height="12" rx="3" fill="#2f2a22"/>
+      <rect x="104" y="206" width="22" height="12" rx="3" fill="#2f2a22"/>
+      {/* arms */}
+      <rect x="52"  y="92" width="20" height="64" rx="6" fill={light}/>
+      <rect x="128" y="92" width="20" height="64" rx="6" fill={light}/>
+      <rect x="52"  y="146" width="20" height="14" rx="4" fill={skin}/>
+      <rect x="128" y="146" width="20" height="14" rx="4" fill={skin}/>
+      {/* torso (shirt = chosen color) */}
+      <rect x="68" y="90" width="64" height="84" rx="10" fill={c} stroke={dark} strokeWidth="2"/>
+      <rect x="68" y="90" width="64" height="18" rx="9" fill={light}/>
+      {/* emblem */}
+      <circle cx="100" cy="132" r="13" fill={light} opacity="0.55"/>
+      <text x="100" y="138" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700" fontSize="16" fill="#1c1a17">★</text>
+      {/* neck */}
+      <rect x="90" y="78" width="20" height="16" fill={skinD}/>
+      {/* head (blocky) */}
+      <rect x="62" y="30" width="76" height="56" rx="12" fill={skin} stroke={skinD} strokeWidth="2"/>
+      {/* hair cap */}
+      <path d="M60 50 Q60 26 100 26 Q140 26 140 50 L140 40 Q100 20 60 40 Z" fill="#5a3f2a"/>
+      {/* eyes */}
+      <rect x="80" y="52" width="9" height="11" rx="2.5" fill="#241c16"/>
+      <rect x="111" y="52" width="9" height="11" rx="2.5" fill="#241c16"/>
+      <circle cx="83" cy="55" r="2" fill="#fff"/>
+      <circle cx="114" cy="55" r="2" fill="#fff"/>
+      {/* smile */}
+      <path d="M84 70 Q100 80 116 70" fill="none" stroke="#241c16" strokeWidth="3" strokeLinecap="round"/>
+      {gear}
+    </svg>
+  );
+}
+function shade(hex,pct){
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  const f=(v)=>clamp(Math.round(v+ (pct/100)*255),0,255);
+  return "#"+[f(r),f(g),f(b)].map(v=>v.toString(16).padStart(2,"0")).join("");
+}
+
+/* ═══════════════ WINDING QUEST MAP (right column) ════════════ */
+function QuestMapTall({ trail, level, color }){
+  // boustrophedon layout: 5 rows × 4 cols, snaking
+  const cols=4, rows=5, W=240, H=420, padX=34, padY=34;
+  const gx=(W-padX*2)/(cols-1), gy=(H-padY*2)/(rows-1);
+  const pos=(i)=>{ const row=Math.floor(i/cols); const inRow=i%cols; const col= row%2===0?inRow:(cols-1-inRow);
+    return { x:padX+col*gx, y:padY+row*gy, row }; };
+  const pts=Array.from({length:20},(_,i)=>pos(i));
+  // path string
+  let dPath=`M ${pts[0].x} ${pts[0].y}`;
+  for(let i=1;i<20;i++) dPath+=` L ${pts[i].x} ${pts[i].y}`;
+  const curIdx=clamp(level-1,0,19);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{maxWidth:260}} role="img" aria-label="Quest map">
+      <path d={dPath} fill="none" stroke="#3a342b" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d={dPath} fill="none" stroke="#5b8c6a" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"
+            strokeDasharray="1000" strokeDashoffset={1000 - (curIdx/19)*1000} opacity="0.9"/>
+      {pts.map((p,i)=>{
+        const n=i+1, done=n<level, here=n===level, seg=trail[i];
+        const fillC = here?color:done?"#5b8c6a":"#2f2a22";
+        return (
+          <g key={n}>
+            <circle cx={p.x} cy={p.y} r={here?13:9} fill={fillC} stroke={here?"#f3ead6":"#3a342b"} strokeWidth={here?3:1.5}/>
+            <text x={p.x} y={p.y+4} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700"
+                  fontSize={here?12:9} fill={here?"#1c1a17":done?"#1c1a17":"#8a7f6c"}>{here?"★":done?"✓":n}</text>
+            {seg && <text x={p.x} y={p.y-15} textAnchor="middle" fontSize="11" fill="#a89a82">{seg.dir==="L"?"◄":"►"}</text>}
+            {i===19 && <text x={p.x} y={p.y+26} textAnchor="middle" fontSize="9" fill="#a62a4a" fontWeight="700">BOSS</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ═══════════════ STYLES ══════════════════════════════════════ */
+const S = {
+  badge:{ display:"inline-block", fontFamily:"'JetBrains Mono',monospace", fontSize:11, letterSpacing:1.5, textTransform:"uppercase", color:"#c9a227", border:"1px solid #5c4f2e", padding:"4px 10px", borderRadius:99, marginBottom:14 },
+  hat:{ fontFamily:"Georgia,serif", fontSize:26, margin:"0 0 6px", color:"#f3ead6" },
+  panel:{ background:"#26221c", border:"1px solid #3a342b", borderRadius:16, padding:18, boxShadow:"0 18px 50px rgba(0,0,0,.45)" },
+  bar:{ height:10, borderRadius:99, background:"#15130f", overflow:"hidden", border:"1px solid #3a342b" },
+  fill:(p,c)=>({ height:"100%", width:`${clamp(p,0,100)}%`, background:c, transition:"width .4s ease" }),
+  q:{ fontSize:19, lineHeight:1.4, margin:"10px 0 16px", fontWeight:600 },
+  passage:{ background:"#1d1a15", borderLeft:"3px solid #5c4f2e", borderRadius:8, padding:"12px 14px", fontSize:15, lineHeight:1.55, color:"#d6cbb6", margin:"6px 0 14px", fontStyle:"italic" },
+  opt:(st)=>({ display:"block", width:"100%", textAlign:"left", padding:"13px 16px", margin:"8px 0", borderRadius:12, fontSize:17, cursor:"pointer", border:"1px solid", transition:"all .15s", background: st==="right"?"#284a2e":st==="wrong"?"#4a2828":"#2f2a22", borderColor: st==="right"?"#5b8c6a":st==="wrong"?"#a6564a":"#473f33", color:"#e8e0d2" }),
+  choice:{ display:"block", width:"100%", padding:"15px", margin:"10px 0", borderRadius:12, fontSize:16, cursor:"pointer", border:"1px solid #473f33", background:"#2f2a22", color:"#e8e0d2", textAlign:"left" },
+  cta:(bg="#c9a227")=>({ display:"block", width:"100%", padding:"15px", marginTop:10, borderRadius:12, fontSize:18, fontWeight:700, cursor:"pointer", border:"none", background:bg, color:"#1c1a17" }),
+  ghost:{ display:"block", width:"100%", padding:"12px", marginTop:8, borderRadius:12, fontSize:14, cursor:"pointer", border:"1px solid #473f33", background:"transparent", color:"#c4b8a4" },
+  row:{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 },
+  stat:{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, color:"#a89a82" },
+  grid2:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 },
+  feedback:(ok)=>({ padding:"11px 14px", borderRadius:10, margin:"6px 0 2px", fontSize:15, background: ok?"#1f3322":"#33201f", color: ok?"#9bd0a6":"#e0a59c" }),
+};
+
+/* ═══════════════ APP ═════════════════════════════════════════ */
+function App(){
+  const [save,setSave]=useState(()=> loadSave() || blankProfile());
+  const [screen,setScreen]=useState("start");
+  const [name,setName]=useState(save.lastName||"");
+  const [cls,setCls]=useState(CLASSES[0]);
+  const [color,setColor]=useState(COLORS[0]);
+  const [diff,setDiff]=useState("medium");
+
+  const [level,setLevel]=useState(1);
+  const [qIdx,setQIdx]=useState(0);
+  const [points,setPoints]=useState(0);
+  const [streak,setStreak]=useState(0);
+  const [hp,setHp]=useState(100);
+  const [powerUps,setPowerUps]=useState(0);
+  const [shield,setShield]=useState(0);
+  const [special,setSpecial]=useState(0);
+  const [trail,setTrail]=useState([]);
+
+  const [stats,setStats]=useState({Math:{seen:0,right:0},ReadingVocab:{seen:0,right:0},ReadingPassage:{seen:0,right:0},Element:{seen:0,right:0},bestStreak:0,monstersBeaten:0});
+
+  const [question,setQuestion]=useState(null);
+  const [picked,setPicked]=useState(null);
+  const [forkOpts,setForkOpts]=useState(null);
+
+  const [monster,setMonster]=useState(null);
+  const [mhp,setMhp]=useState(0);
+  const [logLines,setLogLines]=useState([]);
+  const [mode,setMode]=useState(null);
+  const [battleQ,setBattleQ]=useState(null);
+  const [battlePicked,setBattlePicked]=useState(null);
+  const [flash,setFlash]=useState(null); // 'hit-monster' | 'hit-hero'
+  const [showMap,setShowMap]=useState(false); // phone map toggle
+
+  const unlockedColorIds=(profile)=>{ const b=["gold","emerald","sapphire","crimson"]; COLORS.forEach(c=>{ if(c.unlockPts&&profile.bestPoints>=c.unlockPts)b.push(c.id); }); return b; };
+
+  useEffect(()=>{ if(screen==="play" && !question) setQuestion(buildQuestion(level,qIdx,diff)); },[screen,level,qIdx]);
+
+  useEffect(()=>{
+    if(["play","fork","levelup","battle"].includes(screen)){
+      const snap={ name, clsId:cls.id, colorId:color.id, diff, level, qIdx, points, hp, powerUps, shield, special, trail, stats, seen:[...SEEN] };
+      const next={...save, inProgress:snap, lastName:name}; setSave(next); writeSave(next);
+    }
+  },[level,qIdx,points,hp,screen]);
+
+  function commitLifetime(finalPoints, finalLevel){
+    const lt={...save.lifetime};
+    ["Math","ReadingVocab","ReadingPassage","Element"].forEach(k=>{ lt[k]={seen:lt[k].seen+stats[k].seen, right:lt[k].right+stats[k].right}; });
+    lt.bestStreak=Math.max(lt.bestStreak,stats.bestStreak); lt.monstersBeaten=lt.monstersBeaten+stats.monstersBeaten;
+    const bestPoints=Math.max(save.bestPoints,finalPoints);
+    const next={...save, lifetime:lt, bestPoints, bestLevel:Math.max(save.bestLevel,finalLevel), unlockedColors:unlockedColorIds({...save,bestPoints}), inProgress:null, lastName:name};
+    setSave(next); writeSave(next);
+  }
+
+  const statKey=(qn)=> qn.kind==="Math"?"Math":qn.kind==="Element"?"Element":(qn.subtype==="passage"?"ReadingPassage":"ReadingVocab");
+  function recordAnswer(qn,correct){ setStats(prev=>{ const k=statKey(qn); return {...prev,[k]:{seen:prev[k].seen+1,right:prev[k].right+(correct?1:0)}}; }); }
+
+  function goCustomize(){ setName(n=>n.trim()||"Hero"); setScreen("customize"); }
+  function freshRun(){
+    resetSeen();
+    setLevel(1); setQIdx(0); setPoints(0); setStreak(0); setHp(100); setPowerUps(0); setShield(0); setSpecial(0); setTrail([]);
+    setStats({Math:{seen:0,right:0},ReadingVocab:{seen:0,right:0},ReadingPassage:{seen:0,right:0},Element:{seen:0,right:0},bestStreak:0,monstersBeaten:0});
+    setQuestion(null); setScreen("play");
+  }
+  function resumeRun(){
+    const s=save.inProgress; if(!s) return;
+    SEEN=new Set(s.seen||[]);
+    setName(s.name); setCls(CLASSES.find(c=>c.id===s.clsId)||CLASSES[0]); setColor(COLORS.find(c=>c.id===s.colorId)||COLORS[0]); setDiff(s.diff||"medium");
+    setLevel(s.level); setQIdx(s.qIdx); setPoints(s.points); setHp(s.hp); setPowerUps(s.powerUps); setShield(s.shield); setSpecial(s.special);
+    setTrail(s.trail||[]); setStats(s.stats); setStreak(0); setQuestion(null); setScreen("play");
+  }
+
+  function answer(opt){
+    if(picked) return; setPicked(opt);
+    const correct=opt===question.answer; recordAnswer(question,correct);
+    const base=question.kind==="Element"?50:question.subtype==="passage"?30:20;
+    if(correct){ const ns=streak+1; setStreak(ns); setStats(p=>({...p,bestStreak:Math.max(p.bestStreak,ns)})); setPoints(p=>p+base+(streak>=2?10:0)); if(ns%4===0) setSpecial(s=>s+1); }
+    else setStreak(0);
+  }
+  function next(){ setPicked(null); setQuestion(null);
+    if(qIdx<4){ setQIdx(i=>i+1); return; }
+    setForkOpts(shuffle(DESTINATIONS).slice(0,2)); setScreen("fork");
+  }
+  function choosePath(dest,dir){
+    setTrail(t=>{ const n=[...t]; n[level-1]={dir,dest:dest.name}; return n; });
+    if(level===20){ startBattle(dest,true); return; }
+    if(rint(1,100)<=55) startBattle(dest,false); else advanceLevel();
+  }
+  function advanceLevel(){ if(level>=20){ winRun(); return; } setQIdx(0); setQuestion(null); setLevel(l=>l+1); setScreen("levelup"); }
+
+  function startBattle(dest,forceBoss){
+    let m; if(forceBoss||level===20){ m=MONSTERS[19]; } else { m=rint(1,100)<=40?pick(MONSTERS.slice(0,19)):MONSTERS[clamp(level-1,0,18)]; }
+    const scaledHp=Math.round(m.hp*DIFFS[diff].mHp);
+    setMonster({...m, hp:scaledHp}); setMhp(scaledHp);
+    setLogLines([`${m.boss?"⚠ BOSS! ":""}A ${m.name} appears in ${dest.name}!`]);
+    setMode(null); setBattleQ(null); setBattlePicked(null); setScreen("battle");
+  }
+  function chooseAction(m){ setMode(m); setBattleQ(battleQuestion(level,diff)); setBattlePicked(null); }
+  function fxFlash(which){ setFlash(which); setTimeout(()=>setFlash(null),260); }
+  function answerBattle(opt){
+    if(battlePicked) return; setBattlePicked(opt);
+    const correct=opt===battleQ.answer; recordAnswer(battleQ,correct);
+    const lines=[];
+    if(mode==="attack"||mode==="special"){
+      if(correct){
+        let dmg=cls.dmg+rint(0,6);
+        if(mode==="special"){
+          if(cls.id==="knight"){ dmg*=3; lines.push("⚔ MIGHTY BLOW — triple damage!"); }
+          else if(cls.id==="mage"){ dmg+=8; lines.push("🔥 FIREBALL — extra burn!"); }
+          else if(cls.id==="ranger"){ dmg*=2; lines.push("🏹 DOUBLE SHOT — two arrows!"); }
+          else { setShield(s=>s+1); lines.push("🛡 BULWARK — damage + a shield!"); }
+          setSpecial(s=>s-1);
+        } else if(powerUps>0){ dmg*=2; setPowerUps(p=>p-1); lines.push("⚡ Power-up — double damage!"); }
+        const nm=Math.max(0,mhp-dmg); setMhp(nm); fxFlash("hit-monster"); lines.push(`You hit ${monster.name} for ${dmg}!`);
+        if(nm<=0){ const pts=monster.boss?100:30; lines.push(`${monster.name} defeated! +${pts} pts.`); setPoints(p=>p+pts); setStats(s=>({...s,monstersBeaten:s.monstersBeaten+1})); }
+      } else { lines.push("Miss — wrong answer!"); monsterTurn(lines); }
+    } else if(mode==="heal"){ if(correct){ const h=rint(15,25); setHp(v=>Math.min(100,v+h)); lines.push(`You recover ${h} HP!`); } else lines.push("Healing fizzles — wrong answer."); monsterTurn(lines); }
+    else if(mode==="charge"){ if(correct){ setPowerUps(p=>p+1); lines.push("Power-up charged!"); } else lines.push("The spell sputters — wrong answer."); monsterTurn(lines); }
+    setLogLines(l=>[...lines,...l].slice(0,6));
+  }
+  function monsterTurn(lines){
+    let dmg=Math.round((rint(6,8+level))*DIFFS[diff].mDmg); if(monster.boss)dmg+=6;
+    if(shield>0){ dmg=Math.floor(dmg/2); setShield(s=>s-1); lines.push("Shield softens the blow!"); }
+    const nh=Math.max(0,hp-dmg); setHp(nh); fxFlash("hit-hero"); lines.push(`${monster.name} hits you for ${dmg}.`);
+    if(nh<=0) lines.push("You have fallen...");
+  }
+  function afterBattle(){ setMode(null); setBattleQ(null); setBattlePicked(null); if(hp<=0){ loseRun(); return; } if(mhp<=0){ if(level>=20){ winRun(); } else advanceLevel(); } }
+  function buyShield(){ if(points>=40){ setPoints(p=>p-40); setShield(s=>s+1); setLogLines(l=>["You buy a shield (+1).",...l].slice(0,6)); } }
+  function buyPower(){ if(points>=60){ setPoints(p=>p-60); setPowerUps(p=>p+1); setLogLines(l=>["You buy a power-up (+1).",...l].slice(0,6)); } }
+  function winRun(){ commitLifetime(points,20); setScreen("win"); }
+  function loseRun(){ commitLifetime(points,level); setScreen("over"); }
+
+  const unlocked=save.unlockedColors||["gold","emerald","sapphire","crimson"];
+
+  /* ── left column: character panel ── */
+  const LeftPanel = (
+    <div style={{...S.panel, textAlign:"center"}}>
+      <div style={S.stat}>{name||"Hero"} · {titleFor(level)}</div>
+      <Avatar color={color.hex} clsId={cls.id} size={190} bob={screen!=="battle"} />
+      <div style={{...S.row, marginTop:6}}>
+        <span style={S.stat}>❤ HP</span><span style={S.stat}>{Math.max(0,hp)}/100</span>
+      </div>
+      <div style={S.bar}><div style={S.fill(hp,"#d6493f")} /></div>
+      <div style={{...S.row, marginTop:10, flexWrap:"wrap", justifyContent:"center", gap:8}}>
+        <span style={S.stat}>★ {points}</span>
+        <span style={S.stat}>⚡ {powerUps}</span>
+        <span style={S.stat}>🛡 {shield}</span>
+        <span style={S.stat}>✦ {special}</span>
+      </div>
+      <div style={{...S.stat, marginTop:8, color:"#c9a227"}}>{cls.name} · {DIFFS[diff].label}</div>
+    </div>
+  );
+  const RightPanel = (
+    <div style={{...S.panel}}>
+      <div style={{...S.stat, marginBottom:8}}>Quest map — Level {level}/20</div>
+      <QuestMapTall trail={trail} level={level} color={color.hex} />
+      <div style={{...S.stat, marginTop:8, fontSize:11, lineHeight:1.5}}>★ here · ✓ cleared · ◄►the path you took</div>
+    </div>
+  );
+
+  // layout wrapper: in-run screens get 3 columns; menu screens get single centered panel
+  // Compact header for phones: tiny avatar + vitals + a Map toggle
+  const PhoneHeader = (
+    <div className="qa-phonehead" style={{display:"none"}}>
+      <div style={{...S.panel, padding:12, marginBottom:14}}>
+        <div style={{display:"flex", alignItems:"center", gap:12}}>
+          <div style={{flex:"0 0 56px"}}><Avatar color={color.hex} clsId={cls.id} size={56} bob={false} /></div>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{...S.stat, color:"#e8e0d2", fontWeight:700}}>{name||"Hero"} · {titleFor(level)}</div>
+            <div style={{...S.bar, margin:"5px 0 4px"}}><div style={S.fill(hp,"#d6493f")} /></div>
+            <div style={{...S.stat, fontSize:11}}>❤{Math.max(0,hp)} · ★{points} · ⚡{powerUps} · 🛡{shield} · ✦{special}</div>
+          </div>
+          <button onClick={()=>setShowMap(v=>!v)} style={{...S.ghost, width:"auto", margin:0, padding:"8px 12px", fontSize:13}}>{showMap?"Hide map":"🗺 Map"}</button>
+        </div>
+        {showMap && <div style={{marginTop:10, display:"flex", justifyContent:"center"}}>
+          <QuestMapTall trail={trail} level={level} color={color.hex} />
+        </div>}
+      </div>
+    </div>
+  );
+
+  function ThreeCol({ children }){
+    return (
+      <div style={{ maxWidth:1180, margin:"0 auto", padding:"16px 12px 70px" }}>
+        {PhoneHeader}
+        <div className="qa-3col" style={{ display:"grid", gridTemplateColumns:"minmax(200px,1fr) minmax(300px,2.1fr) minmax(200px,1fr)", gap:18, alignItems:"start" }}>
+          <div className="qa-side">{LeftPanel}</div>
+          <div>{children}</div>
+          <div className="qa-side">{RightPanel}</div>
+        </div>
+        <style>{`
+          @media (max-width: 860px){
+            .qa-3col{ grid-template-columns: 1fr !important; }
+            .qa-side{ display:none !important; }
+            .qa-phonehead{ display:block !important; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+  function Center({ children }){ return <div style={{maxWidth:620,margin:"0 auto",padding:"24px 14px 60px"}}><div style={S.panel}>{children}</div></div>; }
+
+  function StatBar({label,o}){ const pct=o.seen?Math.round(o.right/o.seen*100):0; return (
+    <div style={{margin:"8px 0"}}>
+      <div style={{...S.row,marginBottom:4}}><span style={{fontSize:14}}>{label}</span><span style={S.stat}>{o.right}/{o.seen} · {pct}%</span></div>
+      <div style={S.bar}><div style={S.fill(pct, pct>=70?"#5b8c6a":pct>=40?"#c9a227":"#a6564a")} /></div>
+    </div>); }
+
+  /* ───────── SCREENS ───────── */
+  if(screen==="start"){
+    const ip=save.inProgress;
+    return <Center>
+      <span style={S.badge}>Quest Academy · v6</span>
+      <h1 style={S.hat}>Learn. Customize. Battle. Adventure.</h1>
+      <p style={{color:"#c4b8a4",lineHeight:1.6,marginTop:0}}>Answer math &amp; reading questions to power up your blocky hero, watch your token travel the quest map, battle 20 monsters and a boss, and unlock colors. Pick Easy, Medium, or Hard. Progress saves on this computer.</p>
+      <div style={{textAlign:"center"}}><Avatar color={COLORS[0].hex} clsId="knight" size={180} /></div>
+      {ip && <button style={S.cta("#3fa65f")} onClick={resumeRun}>▶ Resume — {ip.name}, Level {ip.level} ({DIFFS[ip.diff||"medium"].label})</button>}
+      <label style={{...S.stat,display:"block",margin:"14px 0 6px"}}>Name your hero</label>
+      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Type a name…" maxLength={14}
+        style={{width:"100%",padding:"14px 16px",borderRadius:12,fontSize:17,background:"#2f2a22",border:"1px solid #473f33",color:"#e8e0d2",fontFamily:"inherit"}}
+        onKeyDown={e=>e.key==="Enter"&&goCustomize()} />
+      <button style={S.cta()} onClick={goCustomize}>{ip?"Start a new quest →":"Build your hero →"}</button>
+      {save.bestPoints>0 && <button style={S.ghost} onClick={()=>setScreen("stats")}>📊 View lifetime stats</button>}
+    </Center>;
+  }
+
+  if(screen==="customize"){
+    return <Center>
+      <span style={S.badge}>Build your hero</span>
+      <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:16,alignItems:"center"}}>
+        <Avatar color={color.hex} clsId={cls.id} size={150} />
+        <div>
+          <h1 style={{...S.hat,marginTop:0}}>Choose a class</h1>
+          <div style={S.grid2}>
+            {CLASSES.map(c=>(
+              <button key={c.id} onClick={()=>setCls(c)} style={{...S.choice,margin:0,borderColor:cls.id===c.id?color.hex:"#473f33",borderWidth:cls.id===c.id?2:1}}>
+                <div style={{fontWeight:700}}>{c.name}</div><div style={{...S.stat,fontSize:12}}>{c.blurb}</div>
+                <div style={{...S.stat,color:"#c9a227",marginTop:3,fontSize:12}}>★ {c.ability}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <h2 style={{...S.hat,fontSize:19,marginTop:18}}>Pick a color</h2>
+      <p style={S.stat}>Locked colors unlock as your best score grows. Best: {save.bestPoints} pts.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+        {COLORS.map(c=>{ const locked=!unlocked.includes(c.id);
+          return <div key={c.id} title={locked?`Unlocks at ${c.unlockPts} pts`:c.id} onClick={()=>!locked&&setColor(c)}
+            style={{position:"relative",height:40,borderRadius:10,background:locked?"#2a2620":c.hex,cursor:locked?"not-allowed":"pointer",border:color.id===c.id?"3px solid #f3ead6":"3px solid transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#8a7f6c",fontFamily:"'JetBrains Mono',monospace"}}>{locked?`★${c.unlockPts}`:""}</div>; })}
+      </div>
+
+      <h2 style={{...S.hat,fontSize:19,marginTop:18}}>Choose difficulty</h2>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        {Object.entries(DIFFS).map(([k,v])=>(
+          <button key={k} onClick={()=>setDiff(k)} style={{...S.choice,margin:0,textAlign:"center",borderColor:diff===k?color.hex:"#473f33",borderWidth:diff===k?2:1}}>
+            <div style={{fontWeight:700}}>{v.label}</div><div style={{...S.stat,fontSize:11,marginTop:4}}>{v.blurb}</div>
+          </button>
+        ))}
+      </div>
+
+      <button style={S.cta(color.hex)} onClick={freshRun}>Begin the quest →</button>
+      <button style={S.ghost} onClick={()=>setScreen("start")}>← Back</button>
+    </Center>;
+  }
+
+  if(screen==="stats"){
+    const inRun=["Math","ReadingVocab","ReadingPassage","Element"].some(k=>stats[k].seen>0);
+    const src=inRun?stats:save.lifetime;
+    const tot=["Math","ReadingVocab","ReadingPassage","Element"].reduce((a,k)=>({seen:a.seen+src[k].seen,right:a.right+src[k].right}),{seen:0,right:0});
+    const overall=tot.seen?Math.round(tot.right/tot.seen*100):0;
+    return <Center>
+      <span style={S.badge}>{inRun?"This run":"Lifetime report"}</span>
+      <h1 style={S.hat}>{name||"Hero"}'s progress</h1>
+      <div style={{...S.row,marginBottom:10}}><span style={S.stat}>Overall accuracy</span><span style={{fontSize:22,fontWeight:700,color:"#c9a227"}}>{overall}%</span></div>
+      <StatBar label="Math" o={src.Math} />
+      <StatBar label="Reading — vocabulary & grammar" o={src.ReadingVocab} />
+      <StatBar label="Reading — comprehension" o={src.ReadingPassage} />
+      <StatBar label="Periodic table (bonus)" o={src.Element} />
+      <div style={{...S.row,marginTop:14,paddingTop:12,borderTop:"1px solid #3a342b"}}>
+        <span style={S.stat}>🔥 Best streak: {src.bestStreak}</span><span style={S.stat}>⚔ Monsters beaten: {src.monstersBeaten}</span>
+      </div>
+      {!inRun && <div style={{...S.row,marginTop:8}}><span style={S.stat}>🏆 Best score: {save.bestPoints}</span><span style={S.stat}>📈 Furthest: Level {save.bestLevel}</span></div>}
+      <button style={S.cta()} onClick={()=>setScreen(inRun?"play":"start")}>← Back</button>
+    </Center>;
+  }
+
+  if(screen==="levelup"){
+    const newTitle=titleFor(level)!==titleFor(level-1);
+    return <ThreeCol>
+      <div style={S.panel}>
+        <span style={S.badge}>Onward!</span>
+        <h1 style={S.hat}>Level {level}</h1>
+        {newTitle && <p style={{color:"#c9a227",fontWeight:700}}>New rank: {name} the {titleFor(level)}!</p>}
+        <p style={{color:"#c4b8a4",lineHeight:1.6}}>Your hero grows stronger. The path winds on — check the map for what's ahead.</p>
+        <button style={S.cta()} onClick={()=>{ setQuestion(null); setScreen("play"); }}>Continue →</button>
+        <button style={S.ghost} onClick={()=>setScreen("stats")}>📊 View my stats</button>
+      </div>
+    </ThreeCol>;
+  }
+
+  if(screen==="fork" && forkOpts){
+    const [L,R]=forkOpts;
+    return <ThreeCol>
+      <div style={S.panel}>
+        <span style={S.badge}>Level {level} cleared</span>
+        <h1 style={S.hat}>A fork in the road</h1>
+        <p style={{color:"#c4b8a4",lineHeight:1.6}}>{name} the {titleFor(level)} reaches a split. Monsters may lurk on either path.</p>
+        <button style={S.choice} onClick={()=>choosePath(L,"L")}><div style={{fontWeight:700}}>◄ LEFT — {L.name}</div><div style={S.stat}>{L.blurb}</div></button>
+        <button style={S.choice} onClick={()=>choosePath(R,"R")}><div style={{fontWeight:700}}>RIGHT — {R.name} ►</div><div style={S.stat}>{R.blurb}</div></button>
+      </div>
+    </ThreeCol>;
+  }
+
+  if(screen==="battle" && monster){
+    const finished=mhp<=0||hp<=0;
+    return <ThreeCol>
+      <div style={{...S.panel, ...(flash==="hit-hero"?{boxShadow:"0 0 0 3px #a6564a inset"}:{})}}>
+        <span style={{...S.badge, color:monster.boss?"#a62a4a":"#c9a227", borderColor:monster.boss?"#a62a4a":"#5c4f2e"}}>{monster.boss?"⚠ BOSS BATTLE":`Battle · Level ${level}`}</span>
+        <div style={{...S.row, ...(flash==="hit-monster"?{transform:"translateX(3px)"}:{})}}>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:18}}>{monster.name}</div>
+            <div style={{...S.bar,marginTop:6}}><div style={S.fill(mhp/monster.hp*100,monster.color)} /></div>
+            <div style={S.stat}>{mhp} / {monster.hp} HP</div>
+          </div>
+          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:monster.color,marginLeft:14}}>{monster.art}</div>
+        </div>
+        <div style={{background:"#1d1a15",borderRadius:10,padding:"10px 12px",margin:"14px 0",minHeight:64}}>
+          {logLines.map((l,i)=>(<div key={i} style={{...S.stat,color:i===0?"#e8e0d2":"#8a7f6c",margin:"2px 0"}}>{l}</div>))}
+        </div>
+        {!battleQ && !finished && (<>
+          <button style={S.cta("#d6493f")} onClick={()=>chooseAction("attack")}>⚔ Attack {powerUps>0?"(⚡)":""}</button>
+          {special>0 && <button style={S.cta("#c9a227")} onClick={()=>chooseAction("special")}>✦ {cls.ability.split(":")[0]} (special!)</button>}
+          <div style={S.grid2}><button style={{...S.choice,margin:0}} onClick={()=>chooseAction("heal")}>✚ Heal</button><button style={{...S.choice,margin:0}} onClick={()=>chooseAction("charge")}>⚡ Charge</button></div>
+          <div style={S.grid2}><button style={S.ghost} onClick={buyShield} disabled={points<40}>🛡 Shield — 40</button><button style={S.ghost} onClick={buyPower} disabled={points<60}>⚡ Power-up — 60</button></div>
+        </>)}
+        {battleQ && !finished && (<>
+          <div style={S.q}><span style={{...S.badge,marginBottom:0,marginRight:8}}>{battleQ.kind}</span><br/>{battleQ.passage?<span style={S.passage}>{battleQ.passage}</span>:null}{battleQ.prompt}</div>
+          {battleQ.options.map(opt=>{ let st="idle"; if(battlePicked){ if(opt===battleQ.answer)st="right"; else if(opt===battlePicked)st="wrong"; }
+            return <button key={opt} style={S.opt(st)} disabled={!!battlePicked} onClick={()=>answerBattle(opt)}>{opt}</button>; })}
+          {battlePicked && <button style={S.cta()} onClick={afterBattle}>Continue →</button>}
+        </>)}
+        {finished && <button style={S.cta()} onClick={afterBattle}>{mhp<=0?"Victory! Continue →":"Continue →"}</button>}
+      </div>
+    </ThreeCol>;
+  }
+
+  if(screen==="over"){
+    return <Center>
+      <span style={S.badge}>Defeated</span>
+      <h1 style={S.hat}>{name} has fallen…</h1>
+      <div style={{textAlign:"center"}}><Avatar color={color.hex} clsId={cls.id} size={150} bob={false} /></div>
+      <p style={{color:"#c4b8a4",lineHeight:1.6}}>You reached <strong style={{color:"#f3ead6"}}>Level {level}</strong> with {points} points. Heroes always rise again!</p>
+      <button style={S.cta()} onClick={()=>setScreen("customize")}>Try again ↺</button>
+      <button style={S.ghost} onClick={()=>setScreen("start")}>Home</button>
+    </Center>;
+  }
+
+  if(screen==="win"){
+    return <Center>
+      <span style={S.badge}>Quest complete</span>
+      <h1 style={S.hat}>{name} is a LEGEND!</h1>
+      <div style={{textAlign:"center"}}><Avatar color={color.hex} clsId={cls.id} size={180} /></div>
+      <p style={{color:"#c4b8a4",lineHeight:1.6,textAlign:"center"}}>You conquered all 20 levels and the Chaos Lord on {DIFFS[diff].label} with <strong style={{color:"#c9a227"}}>{points} points</strong>!</p>
+      <button style={S.cta()} onClick={()=>setScreen("stats")}>📊 See report card</button>
+      <button style={S.ghost} onClick={()=>setScreen("customize")}>Play again ↺</button>
+    </Center>;
+  }
+
+  // PLAY
+  if(!question) return <ThreeCol><div style={S.panel}><div style={S.stat}>Loading…</div></div></ThreeCol>;
+  const isBonus=question.kind==="Element", isPassage=question.subtype==="passage";
+  return <ThreeCol>
+    <div style={S.panel}>
+      <div style={S.row}><span style={S.badge}>Level {level} / 20</span><span style={S.stat}>{cls.name} · {DIFFS[diff].label} · Q {qIdx+1}/5{streak>=2&&` · 🔥${streak}`}</span></div>
+      <div style={{...S.bar, margin:"8px 0 4px"}}><div style={S.fill(qIdx/5*100,color.hex)} /></div>
+      <div style={{...S.stat,marginTop:12,color:isBonus?"#c9a227":"#a89a82"}}>{isBonus?"⚡ PERIODIC-TABLE BONUS":isPassage?"📖 Read carefully, then answer.":"Answer to power up your hero."}</div>
+      {isPassage && <div style={S.passage}>{question.passage}</div>}
+      <div style={S.q}><span style={{...S.badge,marginBottom:0,marginRight:8}}>{isPassage?"Comprehension":question.kind}</span><br/>{question.prompt}</div>
+      {question.options.map(opt=>{ let st="idle"; if(picked){ if(opt===question.answer)st="right"; else if(opt===picked)st="wrong"; }
+        return <button key={opt} style={S.opt(st)} disabled={!!picked} onClick={()=>answer(opt)}>{opt}</button>; })}
+      {picked && (<>
+        <div style={S.feedback(picked===question.answer)}>{picked===question.answer?`Correct! +${isBonus?50:isPassage?30:20}${streak>=3?" +10 streak":""} pts.`:`Not quite — the answer was ${question.answer}.`}</div>
+        <button style={S.cta()} onClick={next}>{qIdx<4?"Next question →":"Reach the fork →"}</button>
+      </>)}
+    </div>
+  </ThreeCol>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
